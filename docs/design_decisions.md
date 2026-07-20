@@ -162,3 +162,78 @@ All logs must be JSON format with these fields:
 - Add automatic cleanup of local files after upload
 - Add checksum validation (MD5)
 - Add email notifications on failure
+
+
+
+## Bronze Schema — Field Inventory
+
+**Dataset:** E-Commerce Behavior Data from Multi-Category Store
+**Source:** Kaggle (mkechinov)
+**Sample Files:** 2019-Oct.csv, 2019-Nov.csv
+
+### Field Inventory (Based on Real Data Inspection)
+
+| # | Column Name | Sample Values | Apparent Type | Edge Cases Observed |
+|---|-------------|---------------|---------------|---------------------|
+| 1 | `event_time` | 2019-11-01 00:00:00 UTC | Timestamp | All rows have timestamps |
+| 2 | `event_type` | view, purchase, cart | String | Values: view, cart, purchase, remove_from_cart |
+| 3 | `product_id` | 1003461, 5000088 | Long | Always numeric, no nulls |
+| 4 | `category_id` | 2053013555631882655 | Long | Always numeric, no nulls |
+| 5 | `category_code` | electronics.smartphone, **empty** | String | **NULL/empty values exist!** (rows 3, 4 in samples) |
+| 6 | `brand` | xiaomi, lg, **empty** | String | **NULL/empty values exist!** (row with sofa brand is empty) |
+| 7 | `price` | 489.07, 28.31 | Double | Always numeric, no nulls |
+| 8 | `user_id` | 520088904, 530496790 | Long | Always numeric, no nulls |
+| 9 | `user_session` | 4d3b30da-a5e4-49df-b1a8-ba5943f1dd33 | String | Always present (UUID format) |
+
+### Observations from Real Data:
+
+| Observation | Evidence | Impact |
+|-------------|----------|--------|
+| `category_code` is sometimes empty | Row 3: `,,creed,28.31` (empty between commas) | Must be nullable |
+| `brand` is sometimes empty | Row 4: `sofa,,543.10` (empty between commas) | Must be nullable |
+| `user_session` is always a UUID | Format: `4d3b30da-a5e4-49df-b1a8-ba5943f1dd33` | String, non-nullable |
+| `price` is always numeric | All samples have decimal values | Double, non-nullable |
+| `event_type` is always present | view, purchase, cart | String, non-nullable |
+| `category_id` is extremely large | 2053013555631882655 | Long, non-nullable |
+
+### Important Decision:
+
+Since we observed empty values for `category_code` and `brand` in the real data, **these fields MUST be nullable** in our Bronze schema. If we mark them non-nullable, Spark will reject valid rows that have empty values.
+
+
+
+## Bronze Schema Design
+
+### Explicit StructType Schema (Based on Real Data)
+
+| Column | Spark Type | Nullable? | Reasoning |
+|--------|------------|-----------|-----------|
+| `event_time` | TimestampType | No | Every event has a timestamp in every row |
+| `event_type` | StringType | No | Always one of: view, cart, purchase, remove_from_cart |
+| `product_id` | LongType | No | Always a numeric ID |
+| `category_id` | LongType | No | Always a numeric category ID |
+| `category_code` | StringType | **Yes** | **Real data has empty values!** (must allow null) |
+| `brand` | StringType | **Yes** | **Real data has empty values!** (must allow null) |
+| `price` | DoubleType | No | Always a decimal number |
+| `user_id` | LongType | No | Always a numeric user ID |
+| `user_session` | StringType | No | Always a UUID string |
+
+### Complete PySpark Schema:
+
+```python
+from pyspark.sql.types import (
+    StructType, StructField, StringType, 
+    TimestampType, LongType, DoubleType
+)
+
+BRONZE_EVENT_SCHEMA = StructType([
+    StructField("event_time", TimestampType(), nullable=False),
+    StructField("event_type", StringType(), nullable=False),
+    StructField("product_id", LongType(), nullable=False),
+    StructField("category_id", LongType(), nullable=False),
+    StructField("category_code", StringType(), nullable=True),   # IMPORTANT: nullable
+    StructField("brand", StringType(), nullable=True),           # IMPORTANT: nullable
+    StructField("price", DoubleType(), nullable=False),
+    StructField("user_id", LongType(), nullable=False),
+    StructField("user_session", StringType(), nullable=False)
+])
