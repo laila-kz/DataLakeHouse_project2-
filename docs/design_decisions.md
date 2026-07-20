@@ -139,3 +139,26 @@ All logs must be JSON format with these fields:
 {"event": "upload_start", "status": "running", "timestamp": "2026-07-19T22:00:03Z"}
 {"event": "upload_success", "status": "success", "duration_ms": 1234, "bytes": 48213911}
 {"event": "ingestion_complete", "status": "success", "total_duration_ms": 3579}
+
+
+## Implementation Reconciliation (2026-07-20)
+
+### ✅ What Was Implemented as Planned
+- All core functionality from the design doc
+- Idempotency via MinIO `_SUCCESS` marker
+- Structured JSON logging
+- Retry with exponential backoff
+
+### 🔄 Deliberate Deviations
+1. **Manual upload for large files**
+   - Reason: Network limitations
+   - Impact: Script still works for any file size, just took time
+
+2. **No automatic cleanup of local files**
+   - Reason: Keep for debugging/backup
+   - Impact: May need to clean manually
+
+### 📝 Future Improvements
+- Add automatic cleanup of local files after upload
+- Add checksum validation (MD5)
+- Add email notifications on failure
