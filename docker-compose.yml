@@ -29,6 +29,7 @@ services:
       - "7077:7077"
     volumes:
       - ./spark/apps:/opt/spark-apps
+      - ./spark_jobs:/opt/spark/work-dir/spark_jobs
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     networks:
       - data_stack
