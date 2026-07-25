@@ -1,0 +1,14 @@
+# Soda Core configuration for Spark connecting to MinIO/S3
+data_source spark_datasource:
+  type: spark
+  connection:
+    host: spark
+    port: 7077
+    # Spark session will be passed programmatically
+    # or use the default Spark session
+
+# Optional: DuckDB configuration for local testing
+data_source duckdb_datasource:
+  type: duckdb
+  connection:
+    database: /tmp/soda_scan.duckdb

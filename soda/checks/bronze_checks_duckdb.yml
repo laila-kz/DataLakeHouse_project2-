@@ -1,0 +1,45 @@
+# Soda Core Quality Checks for Bronze Layer
+# Using DuckDB to read Delta tables
+
+checks for bronze_table:
+
+  # ===== TASK 2: Schema Conformance Check =====
+  - schema:
+      name: "Bronze schema conformance"
+      fail:
+        when required column missing:
+          - event_time
+          - event_type
+          - product_id
+          - category_id
+          - category_code
+          - brand
+          - price
+          - user_id
+          - user_session
+          - ingested_at
+          - source_file
+          - pipeline_run_id
+          - batch_id
+          - event_date
+
+  # ===== TASK 3: Null Checks =====
+  - missing_count(event_time) = 0:
+      name: "event_time should never be null"
+      
+  - missing_count(product_id) = 0:
+      name: "product_id should never be null"
+      
+  - missing_count(user_id) = 0:
+      name: "user_id should never be null"
+      
+  - missing_count(price) = 0:
+      name: "price should never be null"
+
+  # ===== TASK 4: Freshness Check =====
+  - freshness(ingested_at) < 2d:
+      name: "Data ingestion freshness"
+      
+  # ===== TASK 5: Volume Check =====
+  - row_count > 1000:
+      name: "Bronze table has data"

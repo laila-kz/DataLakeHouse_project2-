@@ -1,0 +1,37 @@
+# Soda Core v4 Contract for Bronze Table
+dataset: duckdb_datasource/main/tmp/bronze_ecommerce_events
+
+columns:
+  - name: event_time
+    checks:
+      - missing:
+          warn: when > 0
+          fail: when > 100
+  
+  - name: product_id
+    checks:
+      - missing:
+          warn: when > 0
+          fail: when > 100
+  
+  - name: user_id
+    checks:
+      - missing:
+          warn: when > 0
+          fail: when > 100
+  
+  - name: price
+    checks:
+      - missing:
+          warn: when > 0
+          fail: when > 100
+
+checks:
+  - freshness:
+      column: ingested_at
+      warn: when > 1d
+      fail: when > 2d
+  
+  - row_count:
+      warn: when < 100
+      fail: when < 10

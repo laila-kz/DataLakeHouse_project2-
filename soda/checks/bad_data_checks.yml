@@ -1,0 +1,12 @@
+# Soda Core Checks for Bad Data Test
+
+checks for test_bad_events:
+
+  - missing_count(event_time) = 0:
+      name: "event_time should never be null"
+
+  - missing_count(product_id) = 0:
+      name: "product_id should never be null"
+
+  - missing_count(user_id) = 0:
+      name: "user_id should never be null"

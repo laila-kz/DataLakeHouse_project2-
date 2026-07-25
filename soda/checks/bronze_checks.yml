@@ -1,0 +1,59 @@
+# Soda Core Quality Checks for Bronze Layer
+# Data source: Bronze Delta Table (s3a://bronze/ecommerce_events/)
+
+checks for bronze_ecommerce_events:
+
+  # ===== SCHEMA CONFORMANCE CHECK =====
+  - schema:
+      name: "Bronze schema conformance"
+      fail:
+        when required column missing:
+          - event_time
+          - event_type
+          - product_id
+          - category_id
+          - category_code
+          - brand
+          - price
+          - user_id
+          - user_session
+          - ingested_at
+          - source_file
+          - pipeline_run_id
+          - batch_id
+          - event_date
+
+  # ===== NULL CHECKS ON REQUIRED FIELDS =====
+  - missing_count(event_time) = 0:
+      name: "event_time should never be null"
+      
+  - missing_count(product_id) = 0:
+      name: "product_id should never be null"
+      
+  - missing_count(user_id) = 0:
+      name: "user_id should never be null"
+      
+  - missing_count(price) = 0:
+      name: "price should never be null"
+
+  # ===== NULL COUNTS FOR ALLOWED NULLS =====
+  - missing_count(category_code) >= 0:
+      name: "category_code null count"
+      
+  - missing_count(brand) >= 0:
+      name: "brand null count"
+      
+  - missing_count(user_session) >= 0:
+      name: "user_session null count"
+
+  # ===== FRESHNESS CHECK =====
+  - freshness(ingested_at) < 2d:
+      name: "Data ingestion freshness"
+
+  # ===== VOLUME CHECK (SIMPLIFIED) =====
+  - row_count > 1000:
+      name: "Bronze table has data"
+
+  # ===== DUPLICATE CHECK =====
+  - duplicate_count(product_id, user_id, event_time) = 0:
+      name: "No duplicate events"
