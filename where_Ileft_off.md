@@ -1,2 +1,2 @@
-#### Ifinished the day 10 
-#### next is day 11
+i m done with week 1 and 2 
+next week 3 
