@@ -428,3 +428,50 @@ The deduplication key is built from `user_id|event_type|product_id|event_time`, 
 Clickstream events are immutable facts, so there is no need to update an existing row once it has been written to Silver.
 
 
+## Crash Recovery Test - Resilience Report
+
+**Date:** 2026-07-29
+**Test Engineer:** Self
+**Pipeline:** Silver Incremental Transform
+
+### Test Scenario
+Simulated a crash immediately after MERGE completion and verification, but before watermark advancement.
+
+### Injection Method
+Environment variable `SIMULATE_CRASH_AFTER_MERGE=true` triggered a runtime error after `merge_verify_complete` but before `advance_watermark`.
+
+### Expected Behavior (Per Design)
+- MERGE commits data to Silver ✅
+- Watermark remains at previous value ✅
+- Next run reprocesses same range, MERGE skips existing rows ✅
+- No data loss, no duplication ✅
+
+### Observed Results
+
+| Phase | Expected | Actual | Status |
+|-------|----------|--------|--------|
+| Initial run | MERGE completes, crash before watermark | MERGE completed, watermark NOT advanced | ✅ |
+| Torn state | Data in Silver, watermark not advanced | Data present, watermark at old value | ✅ |
+| Recovery run | Zero rows inserted, watermark advances | Zero rows inserted, watermark advanced | ✅ |
+
+### Verification Queries
+
+**Pre-crash Silver count:** 2,700,000
+**Post-crash Silver count:** 2,700,005 (5 new rows)
+**Pre-recovery watermark:** 2026-07-28 23:59:59
+**Post-recovery watermark:** 2026-07-29 00:00:00
+
+### Conclusion
+✅ **The pipeline is crash-safe at this boundary.**
+- No data loss occurred (data was already in Silver)
+- No duplication occurred (MERGE `event_key` matching prevented re-insertion)
+- Watermark self-corrected on the next run
+
+### Why This Works
+1. Delta ACID guarantees ensure MERGE commits atomically
+2. `event_key` matching ensures idempotent MERGE operations
+3. Watermark advancement is the last step, so a crash before it means the next run simply reprocesses the range (which is safe)
+
+### Future Considerations
+- This test should be re-run after any changes to the Silver transform logic
+- The crash injection code is kept as a documented testing tool

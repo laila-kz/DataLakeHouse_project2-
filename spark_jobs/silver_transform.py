@@ -588,6 +588,25 @@ def main():
         if not verification["verified"]:
             raise RuntimeError("MERGE verification failed")
 
+        #****************************************************
+        # ===== SIMULATED CRASH INJECTION POINT =====
+        # ===== TESTING: Simulated Crash Injection =====
+        # This is a permanent testing feature. Set SIMULATE_CRASH_AFTER_MERGE=true
+        # to test crash recovery behavior. This code is intentionally retained as a
+        # repeatable regression test for the crash-safety boundary.
+        # DO NOT remove - it's a documented testing tool.
+        if os.environ.get("SIMULATE_CRASH_AFTER_MERGE") == "true":
+            logger.warning(
+                "SIMULATED CRASH triggered after MERGE verification",
+                extra={
+                    "event": "simulated_crash",
+                    "location": "after_merge_verification_before_watermark",
+                    "message": "This is a test crash - the MERGE completed successfully but watermark was NOT advanced"
+                }
+            )
+            raise RuntimeError("Simulated crash for testing - MERGE completed, watermark NOT advanced")
+        #****************************************************
+        # ===== TASK 4: Advance watermark (ONLY AFTER verification) =====
         advance_watermark(spark, args.silver_path, final_df, args.batch_id, logger)
 
         logger.info(
