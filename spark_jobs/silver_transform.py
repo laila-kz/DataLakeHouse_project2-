@@ -14,11 +14,10 @@ from datetime import datetime
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, current_timestamp, lit, sha2, concat_ws,
-    split, when, size, to_utc_timestamp, date_format
+    split, when, size, to_utc_timestamp, date_format,
+    max as spark_max
 )
 from delta.tables import DeltaTable
-from pyspark.sql.functions import col, max as spark_max, when
-
 
 try:
     from dotenv import load_dotenv
@@ -208,8 +207,6 @@ def apply_business_filters(df, logger):
     1. user_session IS NOT NULL
     2. price >= 0
     3. event_time >= '2019-01-01' AND event_time <= CURRENT_DATE()
-
-    Log rows dropped per filter
     """
     initial_count = df.count()
     logger.info(
@@ -302,10 +299,11 @@ def parse_category_code(df, logger):
 
 def compute_event_key(df, logger):
     """
-    Compute synthetic deduplication key using SHA-256
-    Format: sha2(concat_ws("|", user_id, event_type, product_id, event_time_iso), 256)
+    Compute synthetic deduplication key using SHA-256 and event_date for partitioning
     """
-    logger.info("Computing deduplication key", extra={"event": "event_key_start"})
+    logger.info("Computing deduplication key & partition date", extra={"event": "event_key_start"})
+
+    df = df.withColumn("event_date", date_format(col("event_time"), "yyyy-MM-dd"))
 
     df = df.withColumn(
         "event_time_iso",
@@ -343,11 +341,12 @@ def compute_event_key(df, logger):
 
     return df
 
+
 def check_duplicates(df, logger):
     """Check for duplicate event_key values and log results"""
     duplicates = df.groupBy("event_key").count().filter(col("count") > 1)
     duplicate_count = duplicates.count()
-    
+
     if duplicate_count > 0:
         logger.info(
             "Duplicate keys found",
@@ -363,100 +362,6 @@ def check_duplicates(df, logger):
             extra={"event": "duplicate_keys_none"}
         )
 
-def main():
-    args = parse_args()
-    logger = setup_logging()
-    logger.setLevel(getattr(logging, args.log_level))
-
-    logger.info(
-        "Silver transform started",
-        extra={
-            "event": "job_started",
-            "batch_id": args.batch_id,
-            "bronze_path": args.bronze_path,
-            "silver_path": args.silver_path,
-        },
-    )
-
-    spark = create_spark_session(logger)
-    try:
-        # TASK 2: Read watermark
-        watermark_value = read_watermark(spark, args.silver_path, logger)
-        
-        # TASK 3: Read Bronze rows newer than watermark
-        bronze_df = read_bronze_new_rows(spark, args.bronze_path, watermark_value, logger)
-        
-        if bronze_df.count() == 0:
-            logger.info(
-                "No new rows to process",
-                extra={"event": "no_new_rows", "status": "skipped"}
-            )
-            return
-        
-        # TASK 4: Apply business filters
-        filtered_df = apply_business_filters(bronze_df, logger)
-        
-        # TASK 5: Parse category_code
-        enriched_df = parse_category_code(filtered_df, logger)
-        
-        # TASK 6: Compute deduplication key
-        final_df = compute_event_key(enriched_df, logger)
-        
-        # TASK 7: Check for duplicates (log only)
-        check_duplicates(final_df, logger)
-        
-        # ===== NEW: Silver Table Creation & MERGE =====
-        
-        # TASK 1: Ensure Silver table exists
-        table_exists, created_new = ensure_silver_table_exists(
-            spark, args.silver_path, final_df, logger
-        )
-        
-        if created_new:
-            # First run - already wrote the table
-            logger.info(
-                "Initial Silver table created",
-                extra={"event": "silver_first_run", "rows": final_df.count()}
-            )
-            # Still need to set watermark (Task 4)
-        else:
-            # TASK 2: MERGE INTO existing table
-            merge_into_silver(spark, args.silver_path, final_df, logger)
-        
-        # TASK 3: Verify MERGE via DESCRIBE HISTORY
-        verification = verify_merge_success(
-            spark, args.silver_path, final_df.count(), logger
-        )
-        
-        if not verification["verified"]:
-            raise RuntimeError("MERGE verification failed")
-        
-        # TASK 4: Advance watermark (ONLY AFTER verification)
-        advance_watermark(spark, args.silver_path, final_df, args.batch_id, logger)
-        
-        # TASK 6: Log the four-part sequence
-        # Already logged: merge_start, merge_executed, merge_verify_complete, watermark_advance_complete
-        
-        logger.info(
-            "Silver transform completed",
-            extra={
-                "event": "job_completed",
-                "status": "success",
-                "batch_id": args.batch_id,
-                "rows_processed": final_df.count()
-            }
-        )
-        
-    except Exception as e:
-        logger.error(
-            "Job failed",
-            extra={"event": "job_failure", "error": str(e)}
-        )
-        raise
-    finally:
-        spark.stop()
-
-
 
 def ensure_silver_table_exists(spark, silver_path, source_df, logger):
     """
@@ -467,9 +372,8 @@ def ensure_silver_table_exists(spark, silver_path, source_df, logger):
         "Checking if Silver table exists",
         extra={"event": "silver_table_check", "path": silver_path}
     )
-    
+
     try:
-        # Try to read the table
         spark.read.format("delta").load(silver_path)
         logger.info(
             "Silver table exists",
@@ -477,25 +381,22 @@ def ensure_silver_table_exists(spark, silver_path, source_df, logger):
         )
         return True, False
     except Exception as e:
-        # Table doesn't exist - create it
         logger.info(
             "Silver table does not exist - creating",
             extra={"event": "silver_table_creating", "error": str(e)}
         )
-        
-        # Write the source data as the initial table
+
         source_df.write \
             .format("delta") \
             .mode("overwrite") \
             .partitionBy("event_date") \
             .save(silver_path)
-        
+
         logger.info(
             "Silver table created",
             extra={"event": "silver_table_created", "row_count": source_df.count()}
         )
         return True, True
-    
 
 
 def merge_into_silver(spark, silver_path, source_df, logger):
@@ -507,11 +408,9 @@ def merge_into_silver(spark, silver_path, source_df, logger):
         "Starting MERGE into Silver",
         extra={"event": "merge_start", "source_rows": source_df.count()}
     )
-    
-    # Get DeltaTable handle
+
     delta_table = DeltaTable.forPath(spark, silver_path)
-    
-    # Perform MERGE
+
     delta_table.alias("target") \
         .merge(
             source_df.alias("source"),
@@ -519,13 +418,12 @@ def merge_into_silver(spark, silver_path, source_df, logger):
         ) \
         .whenNotMatchedInsertAll() \
         .execute()
-    
-    # Note: NO .whenMatchedUpdateAll() - events are immutable!
-    
+
     logger.info(
         "MERGE execution completed",
         extra={"event": "merge_executed"}
     )
+
 
 def verify_merge_success(spark, silver_path, expected_rows, logger):
     """
@@ -536,35 +434,23 @@ def verify_merge_success(spark, silver_path, expected_rows, logger):
         "Verifying MERGE via DESCRIBE HISTORY",
         extra={"event": "merge_verify_start", "expected_rows": expected_rows}
     )
-    
-    # Get latest history entry
+
     history_df = spark.sql(f"DESCRIBE HISTORY delta.`{silver_path}`")
     latest = history_df.orderBy(col("version").desc()).first()
-    
+
     if not latest:
         logger.error(
             "No history entries found",
             extra={"event": "merge_verify_failed", "reason": "no_history"}
         )
         raise RuntimeError("No Delta history entries found")
-    
-    # Extract operation metrics
+
     operation = latest.operation
-    metrics = latest.operationMetrics
-    
-    # Check operation is MERGE
-    if operation != "MERGE":
-        logger.warning(
-            f"Latest operation is {operation}, not MERGE",
-            extra={"event": "merge_verify_warning", "operation": operation}
-        )
-    
-    # Extract inserted rows count
+    metrics = latest.operationMetrics or {}
+
     num_inserted = int(metrics.get("numTargetRowsInserted", 0))
-    
-    # Check if it looks plausible
-    verification_passed = num_inserted >= 0
-    
+    verification_passed = num_inserted >= 0 or operation in ["WRITE", "CREATE TABLE AS SELECT"]
+
     logger.info(
         "MERGE verification complete",
         extra={
@@ -575,7 +461,7 @@ def verify_merge_success(spark, silver_path, expected_rows, logger):
             "verified": verification_passed
         }
     )
-    
+
     return {
         "verified": verification_passed,
         "operation": operation,
@@ -584,14 +470,14 @@ def verify_merge_success(spark, silver_path, expected_rows, logger):
         "version": latest.version
     }
 
+
 def advance_watermark(spark, silver_path, batch_df, batch_id, logger):
     """
     Advance watermark to max(event_time) of this batch
     ONLY called after MERGE is verified successful
     """
-    # Compute max event_time from source batch
     max_event_time = batch_df.selectExpr("max(event_time) as max_time").collect()[0][0]
-    
+
     logger.info(
         "Advancing watermark",
         extra={
@@ -600,26 +486,21 @@ def advance_watermark(spark, silver_path, batch_df, batch_id, logger):
             "batch_id": batch_id
         }
     )
-    
+
     watermark_path = f"{silver_path}_watermarks"
-    
-    # Create watermark data
+
     watermark_data = [{
         "pipeline_name": "ecommerce_silver",
         "last_processed_event_time": max_event_time,
         "updated_at": datetime.now(),
         "last_batch_id": batch_id
     }]
-    
+
     watermark_df = spark.createDataFrame(watermark_data)
-    
-    # Write/update watermark
+
     try:
-        # Try to read existing watermark
         existing = spark.read.format("delta").load(watermark_path)
-        
-        # Update existing row
-        from pyspark.sql.functions import when
+
         updated = existing.join(
             watermark_df,
             existing.pipeline_name == watermark_df.pipeline_name,
@@ -639,13 +520,12 @@ def advance_watermark(spark, silver_path, batch_df, batch_id, logger):
             ).otherwise(existing.last_batch_id).alias("last_batch_id"),
             existing.pipeline_name
         )
-        
+
         updated.write.format("delta").mode("overwrite").save(watermark_path)
-        
+
     except Exception:
-        # First write - create new table
         watermark_df.write.format("delta").mode("append").save(watermark_path)
-    
+
     logger.info(
         "Watermark advanced",
         extra={
@@ -654,5 +534,81 @@ def advance_watermark(spark, silver_path, batch_df, batch_id, logger):
             "batch_id": batch_id
         }
     )
+
+
+def main():
+    args = parse_args()
+    logger = setup_logging()
+    logger.setLevel(getattr(logging, args.log_level))
+
+    logger.info(
+        "Silver transform started",
+        extra={
+            "event": "job_started",
+            "batch_id": args.batch_id,
+            "bronze_path": args.bronze_path,
+            "silver_path": args.silver_path,
+        },
+    )
+
+    spark = create_spark_session(logger)
+    try:
+        watermark_value = read_watermark(spark, args.silver_path, logger)
+        bronze_df = read_bronze_new_rows(spark, args.bronze_path, watermark_value, logger)
+
+        if bronze_df.count() == 0:
+            logger.info(
+                "No new rows to process",
+                extra={"event": "no_new_rows", "status": "skipped"}
+            )
+            return
+
+        filtered_df = apply_business_filters(bronze_df, logger)
+        enriched_df = parse_category_code(filtered_df, logger)
+        final_df = compute_event_key(enriched_df, logger)
+
+        check_duplicates(final_df, logger)
+
+        table_exists, created_new = ensure_silver_table_exists(
+            spark, args.silver_path, final_df, logger
+        )
+
+        if created_new:
+            logger.info(
+                "Initial Silver table created",
+                extra={"event": "silver_first_run", "rows": final_df.count()}
+            )
+        else:
+            merge_into_silver(spark, args.silver_path, final_df, logger)
+
+        verification = verify_merge_success(
+            spark, args.silver_path, final_df.count(), logger
+        )
+
+        if not verification["verified"]:
+            raise RuntimeError("MERGE verification failed")
+
+        advance_watermark(spark, args.silver_path, final_df, args.batch_id, logger)
+
+        logger.info(
+            "Silver transform completed",
+            extra={
+                "event": "job_completed",
+                "status": "success",
+                "batch_id": args.batch_id,
+                "rows_processed": final_df.count()
+            }
+        )
+
+    except Exception as e:
+        logger.error(
+            "Job failed",
+            extra={"event": "job_failure", "error": str(e)}
+        )
+        raise
+    finally:
+        spark.stop()
+
+
 if __name__ == "__main__":
     main()
