@@ -529,3 +529,79 @@ Pipeline bugs causing data loss
 Pipeline bugs causing duplication
 
 Unexpected changes in source data
+
+
+## Raw Layer: Quality Checks Implementation Decision
+
+**Date:** 2026-08-11
+
+### Decision: Custom Python Script (boto3-based)
+
+### Reasoning:
+
+**Why NOT Soda YAML:**
+- Raw data is not in a Delta/Parquet format yet
+- Soda Core's Spark/DuckDB connectors expect tabular data
+- Raw CSVs are unstructured at this stage (no schema enforced)
+- Forcing Soda would require additional parsing complexity
+
+**Why Custom boto3 Script:**
+- Raw data is just files in MinIO
+- Checks needed: existence, file size, partition structure, row count
+- These are simpler to implement with direct object storage inspection
+- Avoids unnecessary tool complexity
+- Follows same pattern as Day 6's MinIO client code
+
+**What Raw Checks Are Appropriate:**
+1. ✅ Expected partition structure exists (`ingested_date=YYYY-MM-DD/`)
+2. ✅ CSV files are non-empty (size > 0)
+3. ✅ Basic row count exists (approximate line count)
+4. ✅ Most recent partition is recent (freshness check)
+
+**Why This Matters:**
+- This is a pragmatic tool choice decision
+- Avoids over-engineering a simple need
+- Demonstrates tool-fit thinking (valuable interview signal)
+
+### Implementation
+
+A small Python script at `soda/run_raw_checks.py` using `boto3` client.
+
+
+## Data Quality Framework: Three-Layer Check Suite Design
+
+### Layer Comparison
+
+| Layer | Format | Tool | Focus |
+|-------|--------|------|-------|
+| Raw | Python script | boto3 | Structural/existence |
+| Bronze | YAML | Soda Core | Schema, nulls, freshness |
+| Silver | YAML | Soda Core | Dedup, business rules, volume |
+
+### Why Different Tools for Different Layers
+
+**Raw:** Files in MinIO, no schema yet → simple script is cleaner
+**Bronze:** Delta table, schema enforced → Soda Core ideal
+**Silver:** Delta table, business logic applied → Soda Core ideal
+
+### Consistency Across Suites
+
+All checks share:
+- Same MinIO connection configuration
+- Same JSON logging pattern
+- Same exit code behavior (0 = pass, non-zero = fail)
+- Same failure-path testing discipline
+
+### Check Suites Summary
+
+| Check Suite | # Checks | What It Validates |
+|-------------|----------|-------------------|
+| Raw | 5 | Bucket exists, partition exists, files non-empty, freshness, row count |
+| Bronze | 11 | Schema, nulls, freshness, volume, duplicates |
+| Silver | 5 | Duplicates, business rules, category validity, trailing-average volume |
+
+### Run Order
+
+1. Raw checks → fail early if ingestion broke
+2. Bronze checks → validate shape
+3. Silver checks → validate business logic outcomes

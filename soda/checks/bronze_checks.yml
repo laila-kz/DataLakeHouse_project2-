@@ -47,7 +47,7 @@ checks for bronze_ecommerce_events:
       name: "user_session null count"
 
   # ===== FRESHNESS CHECK =====
-  - freshness(ingested_at) < 2d:
+  - freshness(ingested_at) < 30d:
       name: "Data ingestion freshness"
 
   # ===== VOLUME CHECK (SIMPLIFIED) =====

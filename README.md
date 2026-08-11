@@ -82,3 +82,111 @@ echo "2019-10-01 00:00:00 UTC,view,5000088,2053013566100866035,appliances.sewing
 - `v0.1-phase0-complete`: Docker stack + MinIO connectivity
 - `v0.2-phase1-complete`: Ingestion service working
 - `v0.3-phase2-complete`: Bronze Delta layer + Quality gates
+
+### ✅ Phase 3 Complete (Days 13-18)
+- [x] Silver incremental MERGE design (watermark, dedup key, business rules)
+- [x] Silver transform implementation (watermark read, filters, dedup key)
+- [x] MERGE INTO write with post-merge verification
+- [x] Watermark advancement strictly after MERGE success
+- [x] Crash-safety proven: zero data loss on mid-job failure
+- [x] Silver Soda quality gates (duplicates, business rules, category validity, volume anomaly)
+- [x] Cold-start validation: Ingestion → Bronze → Soda → Silver → Soda
+
+## 🔒 Reliability
+
+### Crash-Safety Guarantee
+
+The Silver incremental pipeline is proven crash-safe at its most critical boundary.
+
+**What Was Tested:**
+- Simulated a crash **immediately after MERGE completion**, **before** watermark advancement
+- This is the exact point where data loss would be most likely if watermarking were incorrectly ordered
+
+**What Was Proven:**
+- ✅ **No data loss** — MERGE data was already in Silver (Delta ACID guarantees)
+- ✅ **No duplication** — MERGE's `event_key` matching prevented re-insertion
+- ✅ **Watermark self-correction** — next run correctly advanced the watermark
+
+**How It Works:**
+1. MERGE commits data to Silver atomically
+2. `event_key` matching ensures idempotent MERGE operations
+3. Watermark is the **last** step, so a crash before it just means the next run reprocesses the range (which is safe)
+
+**Test Evidence:**
+- The `SIMULATE_CRASH_AFTER_MERGE` environment variable triggers a controlled crash
+- Recovery run shows `num_inserted = 0`, watermark correctly advances
+- Full test documented in `docs/design_decisions.md` (Crash Recovery Test section)
+
+> **This is a verifiable claim, not an assumption.** The test can be re-run at any time.
+
+## 🏗️ Architecture (Current State)
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ DATA LAKEHOUSE │
+├─────────────────────────────────────────────────────────────────────────┤
+│ │
+│ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
+│ │ Raw │ │ Bronze │ │ Silver │ │ Gold │ │
+│ │ (CSV) │───▶│ (Delta) │───▶│ (Delta) │───▶│ (Future) │ │
+│ │ │ │ │ │ │ │ │ │
+│ └──────────┘ └──────────┘ └──────────┘ └──────────┘ │
+│ │ │ │ │
+│ ▼ ▼ ▼ │
+│ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
+│ │Ingestion │ │ Quality │ │ Quality │ │
+│ │(Kaggle) │ │ Gate │ │ Gate │ │
+│ └──────────┘ │ (Soda) │ │ (Soda) │ │
+│ └──────────┘ └──────────┘ │
+│ │
+│ ✅ Phase 0 ✅ Phase 2 ✅ Phase 3 │
+│ ✅ Phase 1 (Bronze) (Silver) │
+│ │
+│ 🔒 Reliability: Crash-safety proven at MERGE/watermark boundary │
+└─────────────────────────────────────────────────────────────────────────┘
+
+## 🚀 Running the Full Pipeline
+
+### Full Chain (Ingestion → Bronze → Quality → Silver → Quality)
+
+```bash
+# 1. Start the stack
+docker compose up -d
+
+# 2. Create buckets
+python scripts/create_buckets.py
+
+# 3. Run ingestion
+python ingestion/kaggle_ingest.py
+
+# 4. Run Bronze transform
+docker compose exec spark /opt/spark/bin/spark-submit \
+  --jars /opt/spark/jars-extra/*.jar \
+  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
+  spark_jobs/bronze_transform.py
+
+# 5. Run Bronze Soda checks
+docker compose exec spark bash -lc "cd /opt/spark/work-dir && python3 soda/run_soda_scan.py s3a://bronze/ecommerce_events/ soda/checks/bronze_checks.yml soda/configurations/spark_configuration.yml"
+
+# 6. Run Silver transform
+docker compose exec spark /opt/spark/bin/spark-submit \
+  --jars /opt/spark/jars-extra/*.jar \
+  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
+  spark_jobs/silver_transform.py
+
+# 7. Run Silver Soda checks
+docker compose exec spark python3 soda/run_silver_scan.py
+
+
+Crash-Safety Test (Optional)
+bash
+# Run with crash simulation
+docker compose exec spark bash -c "SIMULATE_CRASH_AFTER_MERGE=true /opt/spark/bin/spark-submit --jars /opt/spark/jars-extra/*.jar --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog spark_jobs/silver_transform.py"
+
+# Run recovery
+docker compose exec spark /opt/spark/bin/spark-submit \
+  --jars /opt/spark/jars-extra/*.jar \
+  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
+  spark_jobs/silver_transform.py
