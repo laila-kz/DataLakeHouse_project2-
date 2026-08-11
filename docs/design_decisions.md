@@ -605,3 +605,71 @@ All checks share:
 1. Raw checks → fail early if ingestion broke
 2. Bronze checks → validate shape
 3. Silver checks → validate business logic outcomes
+
+
+## Quality Gate: Unified Runner Design
+
+**Date:** 2026-08-11
+
+### Decision: Run All Suites Regardless of Early Failures
+
+**Reasoning:**
+- Provides complete picture of all failures in one run
+- A Raw failure shouldn't hide Bronze/Silver issues
+- Better debugging experience (see everything wrong at once)
+- Safer for production (know if multiple layers are broken)
+
+### Overall Exit Code Computation
+overall_exit_code = 0 if ALL suites passed else 1
+
+
+**Implementation:**
+- Track each suite's result independently
+- `overall_passed = True` initially
+- If any suite fails, `overall_passed = False`
+- Return `0` if overall_passed else `1`
+
+**This prevents the "later pass masks earlier failure" bug.**
+
+### Report Structure
+
+```json
+{
+  "timestamp": "2026-08-11T12:00:00Z",
+  "overall_status": "PASSED" | "FAILED",
+  "suites": {
+    "raw": {
+      "status": "PASSED" | "FAILED",
+      "exit_code": 0,
+      "output": "...",
+      "duration_seconds": 1.2
+    },
+    "bronze": {
+      "status": "PASSED" | "FAILED",
+      "exit_code": 0,
+      "output": "...",
+      "duration_seconds": 3.5
+    },
+    "silver": {
+      "status": "PASSED" | "FAILED",
+      "exit_code": 0,
+      "output": "...",
+      "duration_seconds": 4.1
+    }
+  },
+  "summary": {
+    "passed": 3,
+    "failed": 0,
+    "total": 3
+  }
+}
+
+Why This Design
+Same structured logging pattern as all other scripts
+
+Produces a single, audit-ready artifact
+
+Clear pass/fail signal for Airflow
+
+Complete visibility into all failures
+
