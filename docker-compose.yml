@@ -20,7 +20,9 @@ services:
       - data_stack
 
   spark:
-    image: apache/spark:3.5.0
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
     container_name: spark
     environment:
       - SPARK_MASTER_HOST=spark
@@ -30,6 +32,7 @@ services:
     volumes:
       - ./spark/apps:/opt/spark-apps
       - ./spark_jobs:/opt/spark/work-dir/spark_jobs
+      - .:/workspace
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     networks:
       - data_stack

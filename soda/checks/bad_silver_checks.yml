@@ -1,0 +1,24 @@
+# Soda Core Checks for Bad Silver Data Test
+
+checks for test_bad_events:
+
+  - duplicate_count(event_key) = 0:
+      name: "No duplicate event_key values"
+      
+  - valid values for price:
+      name: "Price must be >= 0"
+      valid values:
+        - min: 0
+      
+  - missing_count(user_session) = 0:
+      name: "user_session should never be null"
+      
+  - sql:
+      name: "category_l1 should never be null"
+      query: |
+        SELECT COUNT(*) as null_count
+        FROM test_bad_events
+        WHERE category_l1 IS NULL
+      must have:
+        - column: null_count
+          value: 0

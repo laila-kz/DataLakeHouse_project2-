@@ -1,0 +1,23 @@
+# Soda Core Quality Checks for Silver Layer
+# Validates the outcomes of Silver's incremental processing logic
+
+checks for silver_ecommerce_events:
+
+  # ===== TASK 1: Duplicate Detection =====
+  - duplicate_count(event_key) = 0:
+      name: "No duplicate event_key values"
+
+  # ===== TASK 2: Business Rule Validation =====
+  - min(price) >= 0:
+      name: "Price must be >= 0"
+
+  - missing_count(user_session) = 0:
+      name: "user_session should never be null in Silver"
+
+  # ===== TASK 3: Category Hierarchy Check =====
+  - missing_count(category_l1) = 0:
+      name: "category_l1 should never be null in Silver"
+
+  # ===== TASK 4: Row Count =====
+  - row_count > 100:
+      name: "Silver table has data"

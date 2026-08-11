@@ -475,3 +475,57 @@ Environment variable `SIMULATE_CRASH_AFTER_MERGE=true` triggered a runtime error
 ### Future Considerations
 - This test should be re-run after any changes to the Silver transform logic
 - The crash injection code is kept as a documented testing tool
+
+## Silver Layer: Volume Check Evolution
+
+### Day 11 (Week 2) - Simplified Version
+```yaml
+- row_count > 1000:
+    name: "Bronze table has data"
+    description: "Table should contain at least 1000 rows"
+
+   Note: This was an honest simplification because we didn't have multiple days of run history yet.
+
+Day 17 (Week 3) - Evolved Version
+sql
+WITH current_batch AS (
+  SELECT COUNT(*) as current_count
+  FROM silver_ecommerce_events
+  WHERE event_date >= CURRENT_DATE() - INTERVAL 1 DAY
+),
+trailing_avg AS (
+  SELECT AVG(batch_count) as avg_count
+  FROM (
+    SELECT COUNT(*) as batch_count
+    FROM silver_ecommerce_events
+    WHERE event_date < CURRENT_DATE() - INTERVAL 1 DAY
+    GROUP BY event_date
+    ORDER BY event_date DESC
+    LIMIT 3
+  )
+)
+SELECT 
+  current_count,
+  avg_count,
+  ABS(current_count - avg_count) / avg_count as deviation_rate
+FROM current_batch, trailing_avg
+WHERE ABS(current_count - avg_count) / avg_count > 0.30
+Why This Evolution:
+
+We now have multiple days of real run history (Week 2-3)
+
+Trailing-average comparison is more meaningful than a static threshold
+
+Catches gradual volume changes (data source growth) and sudden anomalies
+
+30% tolerance is generous enough to avoid false alarms with limited history
+
+What This Check Catches:
+
+Upstream data volume changes (business growth)
+
+Pipeline bugs causing data loss
+
+Pipeline bugs causing duplication
+
+Unexpected changes in source data
