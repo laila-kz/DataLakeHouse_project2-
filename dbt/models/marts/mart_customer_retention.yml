@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: mart_customer_retention
-    description: "Cohort retention analysis mart computing customer retention count and rate by cohort month and elapsed months."
+    description: "Cohort retention analysis mart computing customer retention count and rate by cohort month and elapsed months. Downstream consumer: exposure:retention_analytics_dashboard."
     columns:
       - name: cohort_month
         description: "Month customer made their first purchase"

@@ -1,0 +1,38 @@
+version: 2
+
+exposures:
+  - name: daily_executive_dashboard
+    label: "Daily Executive Operations Dashboard"
+    type: dashboard
+    maturity: medium
+    url: https://metabase.ecommerce-lakehouse.internal/dashboards/daily_executive
+    description: "Executive dashboard tracking daily total events, purchases, revenue, and active users by category."
+    owner:
+      name: Data Engineering Team
+      email: data-eng@ecommerce-lakehouse.internal
+    depends_on:
+      - ref('mart_daily_summary')
+
+  - name: retention_analytics_dashboard
+    label: "Customer Cohort Retention Dashboard"
+    type: dashboard
+    maturity: medium
+    url: https://metabase.ecommerce-lakehouse.internal/dashboards/customer_retention
+    description: "Analytics dashboard monitoring customer acquisition cohort retention rates over monthly intervals."
+    owner:
+      name: Growth Analytics Team
+      email: growth-analytics@ecommerce-lakehouse.internal
+    depends_on:
+      - ref('mart_customer_retention')
+
+  - name: category_performance_dashboard
+    label: "Category Revenue Performance & Growth Dashboard"
+    type: dashboard
+    maturity: medium
+    url: https://metabase.ecommerce-lakehouse.internal/dashboards/category_performance
+    description: "Merchandising dashboard showing month-over-month category revenue growth and order volume trends."
+    owner:
+      name: Merchandising Team
+      email: merchandising@ecommerce-lakehouse.internal
+    depends_on:
+      - ref('mart_category_performance')

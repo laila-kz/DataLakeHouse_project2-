@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: mart_daily_summary
-    description: "Daily category rollup aggregating events, purchases, revenue, and active users. Materialized incrementally."
+    description: "Daily category rollup aggregating events, purchases, revenue, and active users. Materialized incrementally. Downstream consumer: exposure:daily_executive_dashboard."
     columns:
       - name: date
         description: "Calendar date of events/purchases"

@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: mart_category_performance
-    description: "Category-level monthly performance mart with period-over-period revenue growth and explicit zero-division handling."
+    description: "Category-level monthly performance mart with period-over-period revenue growth and explicit zero-division handling. Downstream consumer: exposure:category_performance_dashboard."
     columns:
       - name: category_l1
         description: "Top-level category"
