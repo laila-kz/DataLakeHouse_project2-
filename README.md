@@ -104,20 +104,44 @@ graph TD
 
 ---
 
-## 🚀 Running Locally
+## 🚀 Quick Start (One-Command Setup via `Makefile`)
 
-### Prerequisites
-- Docker Desktop 4.0+
-- Python 3.9+
-- Git
-- MinIO Account (free) for credentials
+Execute the complete end-to-end stack using the repository `Makefile`:
 
-### Quick Start
-
-**1. Clone the Repository**
 ```bash
-git clone <your-repo-url>
-cd DataLakehouse
+# 1. Environment Setup & Docker Compose initialization
+make setup
+
+# 2. Run Data Contract Validation
+make test-contracts
+
+# 3. Execute PySpark Medallion Transforms (Bronze & Silver MERGE)
+make run-bronze
+make run-silver
+
+# 4. Execute dbt Dimensional Transformation & Test Suite (83 Data Tests)
+make run-dbt
+make test-dbt
+
+# 5. Run PySpark Optimization & Performance Benchmarks
+make run-benchmarks
+```
+
+---
+
+## 🎙️ 90-Second Senior Elevator Pitch
+
+> *"I built a complete, production-ready Data Lakehouse for an e-commerce platform from the ground up. It implements a Medallion Architecture (Bronze, Silver, Gold) with PySpark and Delta Lake for scalable data processing, gated by an automated Soda Core quality framework between layers. I engineered a dimensional warehouse with dbt using DuckDB, incorporating complex business logic like 30-minute idle sessionization, Type 2 Slowly Changing Dimensions (SCD2), and cohort retention models. Shift-left YAML Data Contracts (`contract_cli.py`) enforce schema evolution and quarantine violating batches to S3 raw quarantine prefixes with Slack diff alerts. The entire 10-task pipeline is automated under Apache Airflow with crash-recovery retries and GitHub Actions CI/CD. It operates locally on a zero-budget stack (MinIO S3, Spark, DuckDB, Docker), matching the exact architectural patterns used by enterprise data teams."*
+
+---
+
+## 📚 Key Technical Documentation & References
+
+- 📋 **[Demo & Execution Video Script](docs/DEMO_AND_RUNBOOK.md)** — Step-by-step instructions for filming a complete cold-start video demo.
+- 📖 **[Design Decisions Record](docs/design_decisions.md)** — Day-by-day technical log of architectural tradeoffs and decisions.
+- 📚 **[Data Catalog & Data Dictionary](docs/data_dictionary.md)** — Unified reference mapping schemas across Raw, Bronze, Silver, and Gold.
+- 🚀 **[Spark Performance Benchmarks](docs/performance_benchmarks.md)** — Case study report proving Z-Ordering and Broadcast Join speedups.
+- 📓 **[Mentor Implementation Workbook](docs/mentor_workbook/P01_ExecutionRoadmap_DailyMentorWorkbook.md)** — Detailed daily mentor workbook tracking the 9-week progression.
 
 
 
