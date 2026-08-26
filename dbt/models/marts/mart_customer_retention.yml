@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: mart_customer_retention
+    description: "Cohort retention analysis mart computing customer retention count and rate by cohort month and elapsed months. Downstream consumer: exposure:retention_analytics_dashboard."
+    columns:
+      - name: cohort_month
+        description: "Month customer made their first purchase"
+        tests:
+          - not_null
+
+      - name: months_since_first_purchase
+        description: "Elapsed months (0, 1, 2, ...)"
+        tests:
+          - not_null
+
+      - name: cohort_size
+        description: "Total distinct customer count in cohort"
+        tests:
+          - not_null
+
+      - name: retained_count
+        description: "Distinct customers in cohort purchasing in this month"
+        tests:
+          - not_null
+
+      - name: retention_rate
+        description: "Ratio of retained_count to cohort_size"
+        tests:
+          - not_null

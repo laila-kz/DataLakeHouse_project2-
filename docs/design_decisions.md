@@ -698,5 +698,46 @@ Clear visibility into all failures
 - To resolve historical product version per event:
   `fact.event_time >= dim_product.valid_from AND (fact.event_time < dim_product.valid_to OR dim_product.valid_to IS NULL)`
 
+
 ### 6. `fact_purchases` Grain
 - **Grain:** One row per purchase event (`event_type = 'purchase'`).
+
+
+## Day 36 - Gold Mart Design Specifications
+
+### 1. Business Questions
+- `mart_daily_summary`: "For any given day, what were total events, total purchases, total revenue, and unique active users, broken down by category?"
+- `mart_customer_retention`: "Of customers who first purchased in month X, what fraction returned to purchase again in months X+1, X+2, X+3...?"
+- `mart_category_performance`: "Which product categories are growing or shrinking in revenue and order volume, period over period?"
+
+### 2. Grain Specifications
+- `mart_daily_summary`: One row per `(date, category_l1)`.
+- `mart_customer_retention`: One row per `(cohort_month, months_since_first_purchase)`.
+- `mart_category_performance`: One row per `(category_l1, period)` where period is monthly (`DATE_TRUNC('month', date)`).
+
+### 3. Materialization Strategy
+- `mart_daily_summary`: `incremental` using `unique_key = ['date', 'category_l1']`. Rebuilding historical daily rollups from scratch every run is wasteful; incremental processing efficiently appends/updates daily slices. Filter: `event_date > (SELECT MAX(date) FROM {{ this }})`.
+- `mart_customer_retention`: `table`. Retention curves require full recomputation across historical cohorts as new purchase activity updates retention status for past cohorts.
+- `mart_category_performance`: `table`. Period-over-period comparisons across window partitions require complete historical context.
+
+### 4. Cohort Retention Logic Spec
+1. Derive `cohort_month` per customer from their first purchase in `fact_purchases` (`DATE_TRUNC('month', MIN(purchased_at))`).
+2. Generate complete calendar month grid from `dim_date` spanning min cohort month to max event date.
+3. Cross-join customers to all calendar months from their `cohort_month` onwards.
+4. Calculate `months_since_first_purchase` = integer month diff between activity month and `cohort_month`.
+5. Left-join purchase activity from `fact_purchases` to set `made_purchase` flag (true/false).
+6. Aggregate by `(cohort_month, months_since_first_purchase)` to compute `cohort_size`, `retained_count`, and `retention_rate`.
+
+### 5. Growth Rate Spec & Zero-Division Handling
+- `prior_period_revenue` = `LAG(revenue) OVER (PARTITION BY category_l1 ORDER BY period)`.
+- `revenue_growth_rate` = `(revenue - prior_period_revenue) / NULLIF(prior_period_revenue, 0)`.
+- Explicit labeling (`growth_rate_label`):
+  - When `prior_period_revenue IS NULL` → `'new_category'`
+  - When `prior_period_revenue = 0` → `'no_prior_revenue'`
+  - Otherwise → `'comparable'`
+
+### 6. Planned Exposures Metadata (for Day 41)
+- `daily_executive_dashboard`: Consumes `mart_daily_summary`.
+- `retention_analytics_dashboard`: Consumes `mart_customer_retention`.
+- `category_performance_dashboard`: Consumes `mart_category_performance`.
+

@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: mart_daily_summary
+    description: "Daily category rollup aggregating events, purchases, revenue, and active users. Materialized incrementally. Downstream consumer: exposure:daily_executive_dashboard."
+    columns:
+      - name: date
+        description: "Calendar date of events/purchases"
+        tests:
+          - not_null
+
+      - name: category_l1
+        description: "Top-level product category"
+        tests:
+          - not_null
+
+      - name: total_events
+        description: "Total event count (all event types)"
+        tests:
+          - not_null
+
+      - name: total_purchases
+        description: "Total purchase event count"
+        tests:
+          - not_null
+
+      - name: total_revenue
+        description: "Sum of purchase revenue"
+        tests:
+          - not_null
+
+      - name: active_users
+        description: "Count of distinct active users"
+        tests:
+          - not_null
