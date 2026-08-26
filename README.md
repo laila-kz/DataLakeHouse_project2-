@@ -65,6 +65,13 @@ A complete data lakehouse implementation using MinIO (storage), Spark (compute),
 - [x] Automated script compilation & integrity verification
 - [x] **Zero-breakage PR merge gating** — tag `v1.1-week8-cicd-complete`
 
+### ✅ Phase 9 Complete (Days 57–63) — Data Contracts & Spark Performance Suite
+- [x] YAML Data Contract engine (`contracts/contract_cli.py` & `contracts/schemas/ecommerce_events_v1.yml`)
+- [x] Automated breaking schema quarantine (`data/quarantine/` or `s3a://raw/quarantine/`)
+- [x] Slack diff alert dispatching on contract violations
+- [x] PySpark Benchmarking Suite (`spark_jobs/spark_benchmark.py`) comparing Delta Z-Ordering, Broadcast Joins, & Partition Tuning
+- [x] Formatted Case Study Report generated at [`docs/performance_benchmarks.md`](file:///c:/Users/kheza/Desktop/Data%20Engineering/DataLakehouse/docs/performance_benchmarks.md) — tag `v1.2-week9-contracts-benchmarking-complete`
+
 ---
 
 ## ⚡ How the Pipeline Works
@@ -240,7 +247,7 @@ docker compose exec spark /opt/spark/bin/spark-submit \
 
 ## Why This Project
 
-This is a production-patterned data lakehouse implementation built around five specific engineering decisions:
+This is a production-patterned data lakehouse implementation built around six specific engineering decisions:
 
 1. **Incremental, crash-safe Silver processing** — The pipeline uses Delta Lake's `MERGE` with a SHA-256 deduplication key and a watermark that only advances after a successful write. I deliberately simulated a crash at the most critical boundary (after MERGE, before watermark) and proved recovery causes zero data loss and zero duplication.
 
@@ -251,5 +258,7 @@ This is a production-patterned data lakehouse implementation built around five s
 4. **Gold-layer marts designed for real business questions** — Each Gold mart answers a specific, statable business question (daily executive KPIs, cohort retention, category revenue growth). `mart_daily_summary` is incremental with a `delete+insert` strategy. `mart_customer_retention` enforces two domain invariants as singular tests: month-0 retention must be 100%, and retained counts must never exceed cohort size. `mart_category_performance` uses explicit LAG-based period-over-period growth with labelled zero-division handling. All three are declared as dbt Exposures, making their downstream consumers part of the lineage graph.
 
 5. **Production Orchestration & Self-Healing** — The full 10-step pipeline runs under Apache Airflow with explicit quality-gate halting semantics, automatic crash-recovery retry composition, dual failure alerting (Slack + email), and native CLI backfill support.
+
+6. **Enterprise Data Governance & Spark Performance Engineering** — Shift-left YAML Data Contracts (`contract_cli.py`) quarantine violating raw batches to `s3a://raw/quarantine/` with Slack diff alerts. The PySpark Benchmarking Suite (`spark_benchmark.py`) empirically proves ~3.0x speedup via Delta Z-Ordering and ~3.2x speedup via Broadcast Joins.
 
 Each of these decisions is documented, tested, and verifiable — not just claimed.
