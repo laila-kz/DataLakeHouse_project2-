@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: "Type 1 thin customer dimension derived from event stream. Deliberately minimal: user_id, first observed timestamp and date key. Aggregate metrics belong in Gold marts."
+    columns:
+      - name: customer_key
+        description: "Surrogate key (MD5 hash of user_id)"
+        tests:
+          - not_null
+          - unique
+
+      - name: user_id
+        description: "Natural key: user identifier"
+        tests:
+          - not_null
+          - unique
+
+      - name: first_seen_at
+        description: "Timestamp of the user's first ever observed event"
+        tests:
+          - not_null
+
+      - name: first_seen_date_key
+        description: "Foreign key to dim_date for first_seen_at date (YYYYMMDD integer)"
+        tests:
+          - not_null

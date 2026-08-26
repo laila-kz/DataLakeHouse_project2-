@@ -1,0 +1,31 @@
+version: 2
+
+models:
+  - name: dim_product
+    description: "Type 2 slowly changing dimension tracking historical product price and category changes over time"
+    columns:
+      - name: product_key
+        description: "Surrogate primary key for product version (MD5 of product_id + valid_from)"
+        tests:
+          - not_null
+          - unique
+
+      - name: product_id
+        description: "Natural product identifier"
+        tests:
+          - not_null
+
+      - name: price
+        description: "Price active during this version window"
+        tests:
+          - not_null
+
+      - name: valid_from
+        description: "Timestamp when this version became valid"
+        tests:
+          - not_null
+
+      - name: is_current
+        description: "Boolean flag indicating current version of product"
+        tests:
+          - not_null
