@@ -55,7 +55,9 @@ services:
       - data_stack
 
   airflow-webserver:
-    image: apache/airflow:2.8.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: airflow-webserver
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
@@ -63,12 +65,21 @@ services:
       - AIRFLOW__WEBSERVER__SECRET_KEY=your-secret-key-change-this
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW_UID=50000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_ENDPOINT=http://minio:9000
+      - KAGGLE_USERNAME=${KAGGLE_USERNAME}
+      - KAGGLE_KEY=${KAGGLE_KEY}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - PYTHONPATH=/opt/airflow/project
     ports:
       - "8080:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
+      - .:/opt/airflow/project
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       airflow-db:
         condition: service_healthy
@@ -82,7 +93,9 @@ services:
       - data_stack
 
   airflow-scheduler:
-    image: apache/airflow:2.8.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: airflow-scheduler
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
@@ -90,10 +103,19 @@ services:
       - AIRFLOW__WEBSERVER__SECRET_KEY=your-secret-key-change-this
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW_UID=50000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_ENDPOINT=http://minio:9000
+      - KAGGLE_USERNAME=${KAGGLE_USERNAME}
+      - KAGGLE_KEY=${KAGGLE_KEY}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - PYTHONPATH=/opt/airflow/project
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
+      - .:/opt/airflow/project
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       airflow-db:
         condition: service_healthy
