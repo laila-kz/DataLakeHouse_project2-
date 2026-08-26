@@ -849,4 +849,33 @@ dbt_test_full
 - **Catchup:** `catchup=False`. Historical backfills are executed on-demand via the native `airflow dags backfill` CLI to prevent uncontrolled retroactive DAG execution cascades.
 
 
+## Day 45 — Reliability Proof: Crash Recovery Under Airflow Automatic Retries
+
+### Verification & Findings
+1. **Verification Test:** Re-injected `SIMULATE_CRASH_AFTER_MERGE=true` inside `silver_transform.py` during an Airflow-managed DAG execution.
+2. **Airflow Behavior:** `silver_transform` failed on attempt 1 immediately after Delta `MERGE` completed but prior to `watermark_advance`. Airflow's scheduler automatically transitioned the task to `up_for_retry` state with exponential backoff.
+3. **Automatic Recovery:** On Attempt 2 (with `SIMULATE_CRASH_AFTER_MERGE=false`), the script re-read the watermark (which remained at the pre-crash timestamp), identified the un-watermarked events, and performed a second deterministic `MERGE` using SHA-256 `event_key`.
+4. **Idempotency Result:** Zero duplicate rows created in Silver Delta table; watermark correctly advanced to ceiling; downstream `silver_quality_gate` passed cleanly on attempt 2.
+
+
+## Day 48 — Operational Runbook: Multi-Day Backfills via Airflow Native CLI
+
+### Backfill Execution Standard
+Historical backfills MUST be triggered explicitly using the Airflow CLI rather than toggling `catchup=True` on the main DAG. This prevents resource starvation and ensures deterministic batch execution order.
+
+```bash
+# Execute backfill for historical date range (e.g. 2026-01-01 to 2026-01-07)
+docker compose exec airflow-webserver airflow dags backfill \
+  --start-date 2026-01-01 \
+  --end-date 2026-01-07 \
+  --reset-dagruns \
+  ecommerce_lakehouse
+```
+
+### Post-Backfill Verification Checks
+1. **Silver History Verification:** Query Delta table `DESCRIBE HISTORY delta.`s3a://silver/ecommerce_events/`` to verify commit version increments match the backfilled date count cleanly.
+2. **Incremental vs. Full-Refresh Equivalence:** Compare `mart_daily_summary` row counts and aggregates between sequential incremental backfill runs and `dbt run --full-refresh --select mart_daily_summary` to verify exact analytical equivalence.
+
+
+
 
