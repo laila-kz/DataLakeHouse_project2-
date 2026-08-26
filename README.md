@@ -58,6 +58,13 @@ A complete data lakehouse implementation using MinIO (storage), Spark (compute),
 - [x] Native Airflow CLI backfill runbook documented (`airflow dags backfill`)
 - [x] **100% automated end-to-end execution** passing from cold-start — tag `v1.0-week7-orchestration-complete`
 
+### ✅ Phase 8 Complete (Days 50–56) — CI/CD Pipeline Automation (GitHub Actions)
+- [x] `.github/workflows/ci.yml` GitHub Actions CI workflow implemented
+- [x] Automated Python linting (`flake8`) via `.flake8` configuration
+- [x] Automated dbt model compilation (`dbt parse` + `dbt compile`) via `.sqlfluff` configuration
+- [x] Automated script compilation & integrity verification
+- [x] **Zero-breakage PR merge gating** — tag `v1.1-week8-cicd-complete`
+
 ---
 
 ## ⚡ How the Pipeline Works

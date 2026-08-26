@@ -1,0 +1,74 @@
+name: CI Data Pipeline & Quality Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  lint-code:
+    name: 🐍 Python Linting (flake8)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Linting Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+
+      - name: Run flake8 Code Formatting Check
+        run: |
+          flake8 .
+
+  dbt-check:
+    name: 📊 dbt Parse & Compile (DuckDB)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dbt-duckdb
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-duckdb
+
+      - name: Validate dbt Models & Compilation
+        working-directory: ./dbt
+        run: |
+          dbt parse --profiles-dir .
+          dbt compile --profiles-dir .
+
+  quality-gate-check:
+    name: 🛡️ Pipeline Integrity & Script Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Verify Python Script Compilation
+        run: |
+          python -m py_compile checks/run_quality_gate.py
+          python -m py_compile ingestion/kaggle_ingest.py
+          python -m py_compile spark_jobs/bronze_transform.py
+          python -m py_compile spark_jobs/silver_transform.py
+          python -m py_compile airflow/plugins/slack_alert.py
+          python -m py_compile airflow/dags/lakehouse_pipeline.py

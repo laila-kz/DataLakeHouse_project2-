@@ -1,0 +1,20 @@
+[sqlfluff]
+dialect = duckdb
+templater = dbt
+rules = L001,L002,L003,L005,L008,L010,L011,L012,L014,L019,L022,L030
+
+[sqlfluff:templater:dbt]
+project_dir = ./dbt
+profiles_dir = ./dbt
+
+[sqlfluff:indentation]
+tab_space_size = 2
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.functions]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = upper
