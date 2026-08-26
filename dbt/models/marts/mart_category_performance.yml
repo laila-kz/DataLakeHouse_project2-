@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: mart_category_performance
+    description: "Category-level monthly performance mart with period-over-period revenue growth and explicit zero-division handling."
+    columns:
+      - name: category_l1
+        description: "Top-level category"
+        tests:
+          - not_null
+
+      - name: period
+        description: "Monthly period"
+        tests:
+          - not_null
+
+      - name: total_orders
+        description: "Total purchase orders in period"
+        tests:
+          - not_null
+
+      - name: total_revenue
+        description: "Total revenue in period"
+        tests:
+          - not_null
+
+      - name: growth_rate_label
+        description: "Label indicating growth rate comparison status ('new_category', 'no_prior_revenue', 'comparable')"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['new_category', 'no_prior_revenue', 'comparable']
