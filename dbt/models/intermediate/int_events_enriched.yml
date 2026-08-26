@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: int_events_enriched
+    description: "Fully enriched intermediate event stream joining stg_events, int_sessions, and stg_products"
+    columns:
+      - name: event_key
+        description: "Primary key of event"
+        tests:
+          - not_null
+          - unique
+
+      - name: session_id
+        description: "Enriched session ID from int_sessions"
+        tests:
+          - not_null
+
+      - name: user_id
+        description: "User ID"
+        tests:
+          - not_null
+
+      - name: product_id
+        description: "Product ID"
+        tests:
+          - not_null

@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: stg_products
+    description: "Staging model for product reference table extracted and deduplicated from event stream"
+    columns:
+      - name: product_id
+        description: "Unique product identifier"
+        tests:
+          - not_null
+          - unique
+
+      - name: latest_price
+        description: "Latest observed price for product"
+        tests:
+          - not_null

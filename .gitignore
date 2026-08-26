@@ -1,8 +1,14 @@
 .env
 data/
 *.db
+*.duckdb
 __pycache__/
-.DS_Store, logs/
-# JAR files (large binaries)
+logs/
+.DS_Store
 *.jar
 jars/
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+dbt/dev.duckdb

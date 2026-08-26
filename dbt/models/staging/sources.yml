@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: silver
+    description: "Quality-gated Silver Delta table layer stored in MinIO S3"
+    tables:
+      - name: ecommerce_events
+        description: "Silver clickstream event stream, cleaned and deduplicated"
+        external_location: "delta_scan('s3://silver/ecommerce_events/')"
+        meta:
+          external_location: "delta_scan('s3://silver/ecommerce_events/')"
+        freshness:
+          warn_after: {count: 7, period: day}
+          error_after: {count: 30, period: day}
+        loaded_at_field: "ingested_at"

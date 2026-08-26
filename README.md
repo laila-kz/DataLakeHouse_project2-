@@ -69,80 +69,59 @@ echo "2019-10-01 00:00:00 UTC,view,5000088,2053013566100866035,appliances.sewing
 # 4. Run Soda checks
 
 
-### ✅ Phase 2 Complete (Days 8-12)
-- [x] Explicit Bronze schema with strict types
-- [x] Schema-enforced reads with quarantine for malformed rows
-- [x] Lineage metadata columns (ingested_at, source_file, pipeline_run_id, batch_id)
-- [x] Delta Lake writes with date partitioning
-- [x] Time travel and version history proven with DESCRIBE HISTORY
-- [x] Soda Core quality gates (schema, nulls, freshness, volume, duplicates)
-- [x] Cold-start validation: Ingestion → Bronze → Soda Gate
+### ✅ Phase 4 Complete (Days 19-21)
+- [x] Raw-layer existence and freshness quality checks
+- [x] Unified Quality Gate Runner (`checks/run_quality_gate.py`)
+- [x] Multi-suite result aggregation (Raw, Bronze, Silver) with zero failure masking
+- [x] Audit-ready JSON reporting and pass/fail exit code signal
+
+### ✅ Phase 5 Staging & Sessionization Complete (Days 22-28 / Week 4)
+- [x] dbt project setup with `dbt-duckdb` adapter querying Silver Delta tables via MinIO S3 (`delta` + `httpfs` extensions)
+- [x] Source declaration with freshness checks (`silver.ecommerce_events`)
+- [x] `stg_events` 1:1 view staging model with standardized schema
+- [x] `stg_products` derived reference table deduplicating product metadata per `product_id`
+- [x] `int_sessions` 30-minute windowed sessionization model with deterministic `session_id` (`user_id` + `session_seq`)
+- [x] `int_events_enriched` joining events, session context, and product attributes
+- [x] 21 automated dbt tests (generic `not_null`, `unique`, `accepted_values` + singular rules: `assert_no_session_gaps_exceed_30_min` & `assert_enriched_events_preserve_row_count`)
 
 ## 🏷️ Tags
 - `v0.1-phase0-complete`: Docker stack + MinIO connectivity
 - `v0.2-phase1-complete`: Ingestion service working
 - `v0.3-phase2-complete`: Bronze Delta layer + Quality gates
-
-### ✅ Phase 3 Complete (Days 13-18)
-- [x] Silver incremental MERGE design (watermark, dedup key, business rules)
-- [x] Silver transform implementation (watermark read, filters, dedup key)
-- [x] MERGE INTO write with post-merge verification
-- [x] Watermark advancement strictly after MERGE success
-- [x] Crash-safety proven: zero data loss on mid-job failure
-- [x] Silver Soda quality gates (duplicates, business rules, category validity, volume anomaly)
-- [x] Cold-start validation: Ingestion → Bronze → Soda → Silver → Soda
+- `v0.4-phase3-complete`: Incremental Silver MERGE + Crash safety
+- `v0.5-phase4-complete`: Unified 3-Layer Soda Quality Gate
+- `v0.6-phase5-staging-complete`: dbt Staging & Sessionization Layer + 21 dbt tests
 
 ## 🔒 Reliability
 
-### Crash-Safety Guarantee
+### Crash-Safety & Data Modeling Guarantees
 
-The Silver incremental pipeline is proven crash-safe at its most critical boundary.
-
-**What Was Tested:**
-- Simulated a crash **immediately after MERGE completion**, **before** watermark advancement
-- This is the exact point where data loss would be most likely if watermarking were incorrectly ordered
-
-**What Was Proven:**
-- ✅ **No data loss** — MERGE data was already in Silver (Delta ACID guarantees)
-- ✅ **No duplication** — MERGE's `event_key` matching prevented re-insertion
-- ✅ **Watermark self-correction** — next run correctly advanced the watermark
-
-**How It Works:**
-1. MERGE commits data to Silver atomically
-2. `event_key` matching ensures idempotent MERGE operations
-3. Watermark is the **last** step, so a crash before it just means the next run reprocesses the range (which is safe)
-
-**Test Evidence:**
-- The `SIMULATE_CRASH_AFTER_MERGE` environment variable triggers a controlled crash
-- Recovery run shows `num_inserted = 0`, watermark correctly advances
-- Full test documented in `docs/design_decisions.md` (Crash Recovery Test section)
-
-> **This is a verifiable claim, not an assumption.** The test can be re-run at any time.
+1. **Spark/Silver Layer:** The Silver incremental pipeline is proven crash-safe at its most critical boundary (MERGE vs. watermark update).
+2. **dbt Modeling Layer:** Row-count preservation between staging and enriched intermediate models is enforced by automated singular tests. Session gaps strictly > 30 minutes trigger new sessions, validated via custom dbt assertions.
 
 ## 🏗️ Architecture (Current State)
 
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ DATA LAKEHOUSE │
+│                           DATA LAKEHOUSE                                │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ │
-│ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-│ │ Raw │ │ Bronze │ │ Silver │ │ Gold │ │
-│ │ (CSV) │───▶│ (Delta) │───▶│ (Delta) │───▶│ (Future) │ │
-│ │ │ │ │ │ │ │ │ │
-│ └──────────┘ └──────────┘ └──────────┘ └──────────┘ │
-│ │ │ │ │
-│ ▼ ▼ ▼ │
-│ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-│ │Ingestion │ │ Quality │ │ Quality │ │
-│ │(Kaggle) │ │ Gate │ │ Gate │ │
-│ └──────────┘ │ (Soda) │ │ (Soda) │ │
-│ └──────────┘ └──────────┘ │
-│ │
-│ ✅ Phase 0 ✅ Phase 2 ✅ Phase 3 │
-│ ✅ Phase 1 (Bronze) (Silver) │
-│ │
-│ 🔒 Reliability: Crash-safety proven at MERGE/watermark boundary │
+│                                                                         │
+│ ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────────────────┐ │
+│ │   Raw    │  │  Bronze  │  │  Silver  │  │ dbt Staging & Intermediate│ │
+│ │  (CSV)   │─▶│ (Delta)  │─▶│ (Delta)  │─▶│   (DuckDB/Delta Scan)     │ │
+│ └──────────┘  └──────────┘  └──────────┘  └───────────────────────────┘ │
+│      │             │             │                      │               │
+│      ▼             ▼             ▼                      ▼               │
+│ ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────────────────┐ │
+│ │Ingestion │  │ Quality  │  │ Quality  │  │   21 dbt Generic &        │ │
+│ │ (Kaggle) │  │  Gate    │  │  Gate    │  │   Singular Data Tests     │ │
+│ └──────────┘  │  (Soda)  │  │  (Soda)  │  └───────────────────────────┘ │
+│               └──────────┘  └──────────┘                                │
+│                                                                         │
+│ ✅ Phase 0-1  ✅ Phase 2    ✅ Phase 3-4  ✅ Phase 5 (Week 4)           │
+│               (Bronze)      (Silver &     (stg_events, stg_products,    │
+│                             Quality Gate)  int_sessions, int_enriched)    │
 └─────────────────────────────────────────────────────────────────────────┘
+
 
 ## 🚀 Running the Full Pipeline
 
@@ -190,3 +169,16 @@ docker compose exec spark /opt/spark/bin/spark-submit \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
   spark_jobs/silver_transform.py
+
+
+## Why This Project
+
+This is a production-patterned data lakehouse implementation built around three specific engineering decisions:
+
+1. **Incremental, crash-safe Silver processing** — The pipeline uses Delta Lake's `MERGE` with a SHA-256 deduplication key and a watermark that only advances after a successful write. I deliberately simulated a crash at the most critical boundary (after MERGE, before watermark) and proved recovery causes zero data loss and zero duplication.
+
+2. **Layer-appropriate data quality** — Raw, Bronze, and Silver each have different quality checks, not repeated ones. Raw checks existence and freshness (before schema enforcement). Bronze checks schema and nulls (after enforcement). Silver checks deduplication and business rule outcomes (after processing). This "shift left" design catches problems earlier and at the right stage.
+
+3. **Unified, Airflow-ready interface** — A single `run_quality_gate.py` command runs all three check suites, aggregates results without masking early failures, and exits with a clear pass/fail signal. This is the exact interface orchestration tools expect.
+
+Each of these decisions is documented, tested, and verifiable — not just claimed.

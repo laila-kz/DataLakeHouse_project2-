@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: int_sessions
+    description: "Intermediate model that assigns window-based 30-minute session boundaries (session_id) per user"
+    columns:
+      - name: event_key
+        description: "Event primary key"
+        tests:
+          - not_null
+          - unique
+
+      - name: session_id
+        description: "Derived session ID (user_id + session sequence)"
+        tests:
+          - not_null
+
+      - name: user_id
+        description: "User ID"
+        tests:
+          - not_null
