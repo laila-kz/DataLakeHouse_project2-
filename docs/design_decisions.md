@@ -741,3 +741,39 @@ Clear visibility into all failures
 - `retention_analytics_dashboard`: Consumes `mart_customer_retention`.
 - `category_performance_dashboard`: Consumes `mart_category_performance`.
 
+
+## Phase 6 Completion Summary (Day 42 — 2026-08-26)
+
+### Final Validation Results
+| Run | Command | Result |
+|-----|---------|--------|
+| Full refresh (build) | `dbt run --full-refresh` | ✅ 13/13 models built — 0 ERR |
+| Full test suite | `dbt test` | ✅ 83/83 PASS — 0 ERR, 0 WARN |
+| Scoped exposure rebuild | `dbt run --select +exposure:daily_executive_dashboard` | ✅ 10 upstream models — correct lineage |
+
+### Incremental Equivalence Proof (`mart_daily_summary`)
+1. `dbt run --full-refresh --select mart_daily_summary` → built correctly
+2. `dbt run --select mart_daily_summary` (incremental) → ran with `is_incremental()` filter, NO-OP on stable data (no new rows inserted because max(date) already at ceiling)
+3. Grain uniqueness test `assert_mart_daily_summary_unique_grain` → PASS in both runs
+
+### Domain Invariants Verified (`mart_customer_retention`)
+- `assert_retention_month_zero_is_100` → PASS: retention_rate = 1.0 for all cohorts at months_since_first_purchase = 0
+- `assert_retention_counts_non_increasing` → PASS: retained_count <= cohort_size for all rows
+
+### Key Files Delivered
+| File | Purpose |
+|------|---------|
+| `dbt/models/marts/mart_daily_summary.sql` | Incremental daily rollup by category |
+| `dbt/models/intermediate/int_customer_month_activity.sql` | Customer-cohort month grid |
+| `dbt/models/marts/mart_customer_retention.sql` | Cohort retention table |
+| `dbt/models/marts/mart_category_performance.sql` | Monthly category revenue growth |
+| `dbt/models/marts/exposures.yml` | 3 downstream dashboard consumers |
+| `dbt/tests/assert_retention_month_zero_is_100.sql` | Domain invariant: month-0 = 100% |
+| `dbt/tests/assert_retention_counts_non_increasing.sql` | Domain invariant: retained ≤ cohort |
+| `dbt/tests/assert_mart_daily_summary_unique_grain.sql` | Grain uniqueness |
+| `dbt/tests/assert_mart_category_performance_unique_grain.sql` | Grain uniqueness |
+
+### Git Tag
+`v0.9-week6-gold-marts-complete` — on merge commit into `main`
+
+

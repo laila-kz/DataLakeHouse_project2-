@@ -7,26 +7,48 @@ A complete data lakehouse implementation using MinIO (storage), Spark (compute),
 
 ## 🏷️ Current Progress
 
-### ✅ Phase 0 Complete (Days 1-3)
+### ✅ Phase 0 Complete (Days 1–3) — Infrastructure
 - [x] Docker Compose stack with Airflow, Spark, MinIO, Metabase
 - [x] All services healthy with healthchecks
 - [x] 6 MinIO buckets: raw, bronze, silver, gold, reference, logs
 - [x] Spark ↔ MinIO connectivity via S3A connector
 - [x] Credentials secured in `.env`
 
-### ✅ Phase 1 Complete (Days 4-7)
+### ✅ Phase 1 Complete (Days 4–7) — Ingestion
 - [x] Kaggle API integration with env-var authentication
 - [x] Idempotent ingestion with MinIO-based `_SUCCESS` marker
 - [x] Structured JSON logging
 - [x] Retry with exponential backoff (tenacity)
 - [x] Partitioned data storage: `raw/ecommerce_events/ingested_date={date}/`
-- [x] End-to-end cold-start validation passed
 
-### 📅 Upcoming (Week 2 - Bronze Layer)
-- [ ] First Airflow DAG
-- [ ] PySpark transformation for Bronze
-- [ ] Data validation before writing
-- [ ] Incremental processing
+### ✅ Phase 2–3 Complete (Days 8–17) — Bronze & Silver Layers
+- [x] PySpark Bronze transform with explicit struct schema
+- [x] Incremental Silver MERGE with SHA-256 deduplication key
+- [x] Watermark advancing only after successful MERGE commit
+- [x] Crash-recovery proven at MERGE/watermark boundary
+- [x] Three-layer Soda Core quality gate (Raw + Bronze + Silver)
+
+### ✅ Phase 4 Complete (Days 18–28) — dbt Staging & Sessionization
+- [x] Freshness-checked Silver source declaration
+- [x] `stg_events` + `stg_products` staging models (views)
+- [x] `int_events_enriched` — sessionized event table
+- [x] `int_sessions` — session boundary detection (30 min idle cutoff)
+- [x] Full singular and schema test suite passing
+
+### ✅ Phase 5 Complete (Days 29–35) — Dimensional Modeling & Facts
+- [x] `dim_date`, `dim_customer`, `dim_product` (Type 2 SCD via LAG/LEAD)
+- [x] `fact_events` + `fact_purchases` with time-ranged joins to `dim_product`
+- [x] 57/57 tests passing in full cold-start rebuild — tag `v0.7-week5-dimensional-model-complete`
+
+### ✅ Phase 6 Complete (Days 36–42) — Gold Business Marts & Exposures
+- [x] Design documented: business questions, grain, materialization strategy
+- [x] `mart_daily_summary` — incremental `(date, category_l1)` rollup
+- [x] `int_customer_month_activity` — customer-cohort month grid (intermediate)
+- [x] `mart_customer_retention` — cohort retention with month-0=100% and non-increasing-counts invariants
+- [x] `mart_category_performance` — period-over-period revenue growth with zero-division labels
+- [x] `exposures.yml` — 3 downstream dashboard consumers declared
+- [x] Scoped rebuild via `dbt run --select +exposure:daily_executive_dashboard` proven
+- [x] **83/83 tests passing** in clean-state full-refresh — tag `v0.9-week6-gold-marts-complete`
 
 ---
 
@@ -173,12 +195,14 @@ docker compose exec spark /opt/spark/bin/spark-submit \
 
 ## Why This Project
 
-This is a production-patterned data lakehouse implementation built around three specific engineering decisions:
+This is a production-patterned data lakehouse implementation built around four specific engineering decisions:
 
 1. **Incremental, crash-safe Silver processing** — The pipeline uses Delta Lake's `MERGE` with a SHA-256 deduplication key and a watermark that only advances after a successful write. I deliberately simulated a crash at the most critical boundary (after MERGE, before watermark) and proved recovery causes zero data loss and zero duplication.
 
 2. **Layer-appropriate data quality** — Raw, Bronze, and Silver each have different quality checks, not repeated ones. Raw checks existence and freshness (before schema enforcement). Bronze checks schema and nulls (after enforcement). Silver checks deduplication and business rule outcomes (after processing). This "shift left" design catches problems earlier and at the right stage.
 
 3. **Unified, Airflow-ready interface** — A single `run_quality_gate.py` command runs all three check suites, aggregates results without masking early failures, and exits with a clear pass/fail signal. This is the exact interface orchestration tools expect.
+
+4. **Gold-layer marts designed for real business questions** — Each Gold mart answers a specific, statable business question (daily executive KPIs, cohort retention, category revenue growth). `mart_daily_summary` is incremental with a `delete+insert` strategy. `mart_customer_retention` enforces two domain invariants as singular tests: month-0 retention must be 100%, and retained counts must never exceed cohort size. `mart_category_performance` uses explicit LAG-based period-over-period growth with labelled zero-division handling. All three are declared as dbt Exposures, making their downstream consumers part of the lineage graph.
 
 Each of these decisions is documented, tested, and verifiable — not just claimed.
