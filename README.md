@@ -50,6 +50,44 @@ A complete data lakehouse implementation using MinIO (storage), Spark (compute),
 - [x] Scoped rebuild via `dbt run --select +exposure:daily_executive_dashboard` proven
 - [x] **83/83 tests passing** in clean-state full-refresh — tag `v0.9-week6-gold-marts-complete`
 
+### ✅ Phase 7 Complete (Days 43–49) — Airflow Orchestration & Reliability
+- [x] DAG design documented: task graph, retry backoff, gating halting semantics
+- [x] `lakehouse_pipeline.py` DAG implemented (ingestion → Bronze → Silver → dbt → tests)
+- [x] Crash recovery under Airflow automatic retry verified (zero duplicate rows)
+- [x] Dual failure alerting plugin (`slack_alert.py`) implemented (Slack primary + email fallback)
+- [x] Native Airflow CLI backfill runbook documented (`airflow dags backfill`)
+- [x] **100% automated end-to-end execution** passing from cold-start — tag `v1.0-week7-orchestration-complete`
+
+---
+
+## ⚡ How the Pipeline Works
+
+The entire data lakehouse operates as a single scheduled Airflow DAG (`ecommerce_lakehouse`) that runs daily (`@daily`). The pipeline processes data through strict, automated quality-gated stages:
+
+```mermaid
+graph TD
+    A[Kaggle API] -->|ingest_raw| B[(MinIO Raw Bucket)]
+    B -->|bronze_transform| C[(MinIO Bronze Delta)]
+    C -->|bronze_quality_gate| D{Soda Quality Gate}
+    D -->|PASS: exit 0| E[silver_transform]
+    D -->|FAIL: exit 1| X[HALT & Alert]
+    E -->|silver_quality_gate| F{Soda Quality Gate}
+    F -->|PASS: exit 0| G[dbt_run_staging]
+    F -->|FAIL: exit 1| X
+    G --> H[dbt_run_intermediate]
+    H --> I[dbt_run_dims_facts]
+    I --> J[dbt_run_marts]
+    J --> K[dbt_test_full]
+    K -->|83/83 PASS| L[Metabase Dashboards]
+    K -->|FAIL| X
+```
+
+### Operational Highlights
+1. **Automated Quality Gating:** Quality checks (`soda`) run between transforms. If a check fails, the gate script returns exit code `1`, immediately halting downstream steps via Airflow's `all_success` dependency rule.
+2. **Crash-Safe Retries:** If a transform fails mid-execution (e.g. after Delta `MERGE` before watermark advance), Airflow automatically retries. The job re-reads the prior watermark, performs a deterministic deduplication via SHA-256 key, and resumes cleanly without duplicate rows.
+3. **Dual Failure Alerting:** Task failure callbacks automatically dispatch detailed Slack Webhook notifications (including direct Airflow log links) with an automated fallback to email.
+
+
 ---
 
 ## 🚀 Running Locally
@@ -195,7 +233,7 @@ docker compose exec spark /opt/spark/bin/spark-submit \
 
 ## Why This Project
 
-This is a production-patterned data lakehouse implementation built around four specific engineering decisions:
+This is a production-patterned data lakehouse implementation built around five specific engineering decisions:
 
 1. **Incremental, crash-safe Silver processing** — The pipeline uses Delta Lake's `MERGE` with a SHA-256 deduplication key and a watermark that only advances after a successful write. I deliberately simulated a crash at the most critical boundary (after MERGE, before watermark) and proved recovery causes zero data loss and zero duplication.
 
@@ -204,5 +242,7 @@ This is a production-patterned data lakehouse implementation built around four s
 3. **Unified, Airflow-ready interface** — A single `run_quality_gate.py` command runs all three check suites, aggregates results without masking early failures, and exits with a clear pass/fail signal. This is the exact interface orchestration tools expect.
 
 4. **Gold-layer marts designed for real business questions** — Each Gold mart answers a specific, statable business question (daily executive KPIs, cohort retention, category revenue growth). `mart_daily_summary` is incremental with a `delete+insert` strategy. `mart_customer_retention` enforces two domain invariants as singular tests: month-0 retention must be 100%, and retained counts must never exceed cohort size. `mart_category_performance` uses explicit LAG-based period-over-period growth with labelled zero-division handling. All three are declared as dbt Exposures, making their downstream consumers part of the lineage graph.
+
+5. **Production Orchestration & Self-Healing** — The full 10-step pipeline runs under Apache Airflow with explicit quality-gate halting semantics, automatic crash-recovery retry composition, dual failure alerting (Slack + email), and native CLI backfill support.
 
 Each of these decisions is documented, tested, and verifiable — not just claimed.
