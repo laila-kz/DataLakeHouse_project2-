@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: fact_purchases
+    description: "Purchase-grain fact table (1 row per purchase event, event_type = 'purchase'). Contains revenue measure. Grain documented in docs/design_decisions.md."
+    columns:
+      - name: purchase_key
+        description: "Primary key (inherits event_key from stg_events)"
+        tests:
+          - not_null
+          - unique
+
+      - name: date_key
+        description: "FK to dim_date"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: customer_key
+        description: "FK to dim_customer"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_key
+
+      - name: product_key
+        description: "FK to dim_product (time-range resolved historical version)"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_product')
+                field: product_key
+
+      - name: revenue
+        description: "Revenue amount (price at time of purchase)"
+        tests:
+          - not_null

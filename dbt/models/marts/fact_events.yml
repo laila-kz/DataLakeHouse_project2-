@@ -1,0 +1,38 @@
+version: 2
+
+models:
+  - name: fact_events
+    description: "Core event-grain fact table (1 row per event) joined to all three dimensions. Uses a time-ranged join to dim_product to resolve the historically correct product version at event time."
+    columns:
+      - name: event_key
+        description: "Primary key inherited from stg_events (SHA-256 dedup key)"
+        tests:
+          - not_null
+          - unique
+
+      - name: date_key
+        description: "FK to dim_date"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: customer_key
+        description: "FK to dim_customer"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_key
+
+      - name: product_key
+        description: "FK to dim_product (time-range resolved version)"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_product')
+                field: product_key

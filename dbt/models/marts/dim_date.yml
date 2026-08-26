@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: "Date dimension model generated via SQL date range for calendar analytics"
+    columns:
+      - name: date_key
+        description: "Integer surrogate key in YYYYMMDD format"
+        tests:
+          - not_null
+          - unique
+
+      - name: date_day
+        description: "Actual calendar date"
+        tests:
+          - not_null
+          - unique

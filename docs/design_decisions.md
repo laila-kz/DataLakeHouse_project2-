@@ -671,5 +671,32 @@ Produces a single, audit-ready artifact
 
 Clear pass/fail signal for Airflow
 
-Complete visibility into all failures
+Clear visibility into all failures
 
+
+## Day 29 - Dimensional Design: Grain, Surrogate Keys & SCD Type 2 Strategy
+
+### 1. Hand-Rolled Type 2 SQL vs. dbt Snapshots for `dim_product`
+- **Decision:** Hand-roll SCD Type 2 history in `dim_product.sql` using window functions (`LAG()`, `LEAD()`, and running sums).
+- **Reasoning:** In an event stream architecture, point-in-time attribute changes (`price`, `category_code`) are embedded directly inside events in `int_events_enriched`. Rather than taking external operational database snapshots, deriving historical validity windows (`valid_from`, `valid_to`) from the event stream guarantees deterministic point-in-time correctness for every event.
+
+### 2. Tracked vs. Untracked Attributes (`dim_product`)
+- **Type 2 Tracked Columns (trigger a new version row):** `price`, `category_l1`, `category_l2`, `category_l3`.
+- **Type 1 Untracked Columns (overwritten in place):** `brand`.
+- **Reasoning:** Financial and category reporting require evaluating historical purchases against the price and taxonomy in effect at event time. Brand is static per product ID.
+
+### 3. Surrogate Key Strategy
+- `dim_date`: Integer key `YYYYMMDD` (e.g., `20191001`).
+- `dim_customer`: MD5 hash of `user_id` (`md5(cast(user_id as varchar))`).
+- `dim_product`: MD5 hash of `product_id` + `valid_from` (`md5(cast(product_id as varchar) || '_' || cast(valid_from as varchar))`).
+
+### 4. `dim_customer` Scope (Type 1 Thin Dimension)
+- **Attributes:** `customer_key`, `user_id`, `first_seen_at`, `first_seen_date_key`.
+- **Decision:** Intentionally thin Type 1 dimension. Aggregates (e.g., total lifetime orders, lifetime spend) belong in Gold-layer marts rather than inflating the dimension.
+
+### 5. Fact-to-Dimension Time-Ranged Join Condition
+- To resolve historical product version per event:
+  `fact.event_time >= dim_product.valid_from AND (fact.event_time < dim_product.valid_to OR dim_product.valid_to IS NULL)`
+
+### 6. `fact_purchases` Grain
+- **Grain:** One row per purchase event (`event_type = 'purchase'`).
