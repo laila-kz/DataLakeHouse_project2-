@@ -777,3 +777,76 @@ Clear visibility into all failures
 `v0.9-week6-gold-marts-complete` — on merge commit into `main`
 
 
+## Day 43 — Airflow Orchestration Design (Phase 6 / Week 7)
+
+### 1. Integration Strategy: `BashOperator` vs. Astronomer Cosmos
+- **Decision:** Use `BashOperator` with layer-granular task grouping (`dbt_run_staging`, `dbt_run_intermediate`, `dbt_run_dims_facts`, `dbt_run_marts`, `dbt_test_full`).
+- **Rationale:** The dbt project uses DuckDB (`dev.duckdb`) stored directly in the workspace directory. Cosmos provides native model-level Airflow DAG generation, but requires running dbt through specialized containerized setup or Python virtual environments. Layer-based `BashOperator` execution provides clean, explicit layer isolation, straightforward debugging inside the mounted Docker volume, and predictable execution without external parser complexity while keeping per-layer failure visibility high.
+
+### 2. Complete Task Dependency Graph & Failure Semantics
+```
+ingest_raw
+   │
+   ▼
+bronze_transform
+   │
+   ▼
+bronze_quality_gate  ◄── [MUST PASS: soda scan exit 0]
+   │
+   ▼
+silver_transform
+   │
+   ▼
+silver_quality_gate  ◄── [MUST PASS: soda scan exit 0]
+   │
+   ▼
+dbt_run_staging
+   │
+   ▼
+dbt_run_intermediate
+   │
+   ▼
+dbt_run_dims_facts
+   │
+   ▼
+dbt_run_marts
+   │
+   ▼
+dbt_test_full
+```
+
+**Quality Gate Halting Semantics:** Downstream steps do NOT merely depend on prior step *completion*, but on explicit *success* (`exit_code == 0`). Airflow's default `trigger_rule="all_success"` enforces this natively because both `soda/run_soda_scan.py` and `checks/run_quality_gate.py` return exit code `1` on check failure, causing Airflow to mark downstream tasks as `upstream_failed` and halt pipeline progression immediately.
+
+### 3. Task Command & Parameter Mapping
+| Task Name | Executor Command | Working Dir | Jinja Parameters |
+|-----------|------------------|-------------|------------------|
+| `ingest_raw` | `python /opt/airflow/project/ingestion/kaggle_ingest.py --date {{ ds }}` | `/opt/airflow/project` | `{{ ds }}` |
+| `bronze_transform` | `docker exec spark /opt/spark/bin/spark-submit --jars /opt/spark/jars-extra/*.jar --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog /opt/spark/work-dir/spark_jobs/bronze_transform.py` | `/opt/airflow/project` | `{{ run_id }}` |
+| `bronze_quality_gate` | `python /opt/airflow/project/checks/run_quality_gate.py --layer bronze` | `/opt/airflow/project` | N/A |
+| `silver_transform` | `docker exec spark /opt/spark/bin/spark-submit --jars /opt/spark/jars-extra/*.jar --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog /opt/spark/work-dir/spark_jobs/silver_transform.py --batch-id {{ run_id }}` | `/opt/airflow/project` | `{{ run_id }}` |
+| `silver_quality_gate` | `python /opt/airflow/project/checks/run_quality_gate.py --layer silver` | `/opt/airflow/project` | N/A |
+| `dbt_run_staging` | `dbt run --select staging --profiles-dir .` | `/opt/airflow/project/dbt` | N/A |
+| `dbt_run_intermediate` | `dbt run --select intermediate --profiles-dir .` | `/opt/airflow/project/dbt` | N/A |
+| `dbt_run_dims_facts` | `dbt run --select core --profiles-dir .` | `/opt/airflow/project/dbt` | N/A |
+| `dbt_run_marts` | `dbt run --select marts --profiles-dir .` | `/opt/airflow/project/dbt` | N/A |
+| `dbt_test_full` | `dbt test --profiles-dir .` | `/opt/airflow/project/dbt` | N/A |
+
+### 4. Task Configuration (Retries, Backoff & Timeouts)
+| Task Category | Retries | Retry Delay | Retry Backoff | Execution Timeout |
+|---------------|---------|-------------|---------------|-------------------|
+| Ingestion & Gating | 3 | 2 mins | True (Exponential) | 10 mins |
+| Spark Transforms | 3 | 5 mins | True (Exponential) | 25 mins |
+| dbt Layer Builds | 2 | 2 mins | True (Exponential) | 15 mins |
+| dbt Tests | 1 | 1 min | False | 10 mins |
+
+### 5. Failure Notification Specification (Dual Alerting: Slack Primary + Email Fallback)
+- **Callback Hook:** `on_failure_callback` defined on DAG `default_args` (triggers strictly on final attempt failure after retries are exhausted).
+- **Slack Payload:** Incoming Webhook containing DAG ID, Task ID, Run ID, Execution Date, Execution Host, Exception/Log Link (`task_instance.log_url`).
+- **Email Payload:** Native Airflow SMTP alert sent to project maintainer if `SLACK_WEBHOOK_URL` fails or is unconfigured.
+
+### 6. Scheduling & Backfill Policy
+- **Schedule:** `@daily` (runs daily at 00:00 UTC).
+- **Catchup:** `catchup=False`. Historical backfills are executed on-demand via the native `airflow dags backfill` CLI to prevent uncontrolled retroactive DAG execution cascades.
+
+
+
