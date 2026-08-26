@@ -19,13 +19,13 @@ import csv
 def load_yaml(yaml_path):
     try:
         import yaml
-        with open(yaml_path, 'r') as f:
+        with open(yaml_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
     except ImportError:
         # Fallback simple parser for contract YAML files
         contract = {"columns": {}, "sla": {}}
         current_col = None
-        with open(yaml_path, 'r') as f:
+        with open(yaml_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith('#'):
@@ -92,7 +92,7 @@ def validate_contract(data_path, contract):
     violations = []
     columns_spec = contract.get("columns", {})
     
-    with open(data_path, 'r', encoding='utf-8') as f:
+    with open(data_path, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
         actual_headers = reader.fieldnames or []
         
