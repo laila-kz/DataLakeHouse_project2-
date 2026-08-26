@@ -901,6 +901,25 @@ docker compose exec airflow-webserver airflow dags backfill \
 `v1.0-week7-orchestration-complete` — on merge commit into `main`
 
 
+## Week 8 — CI/CD Pipeline Automation with GitHub Actions
+
+### Workflow Architecture (`.github/workflows/ci.yml`)
+The continuous integration pipeline automates code quality, linting, dbt model compilation, and script integrity checks across three parallel jobs:
+
+1. **`lint-code`**: Executes `flake8` across all Python source directories (`ingestion/`, `spark_jobs/`, `checks/`, `airflow/`). Configured via `.flake8` with max line length 120 and standard PEP8 ignores.
+2. **`dbt-check`**: Validates dbt project parsing (`dbt parse`) and model compilation (`dbt compile`) using DuckDB adapter. Configured via `.sqlfluff` for SQL dialect formatting rules.
+3. **`quality-gate-check`**: Runs `py_compile` syntax verification on all critical pipeline entrypoints to ensure zero runtime syntax errors.
+
+### Configuration Artifacts Created
+- `.flake8`: Python linting rules & exclusions.
+- `.sqlfluff`: DuckDB dbt SQL formatting rules.
+- `.github/workflows/ci.yml`: GitHub Actions pipeline specification.
+
+### Git Tag
+`v1.1-week8-cicd-complete` — on merge commit into `main`
+
+
+
 
 
 
