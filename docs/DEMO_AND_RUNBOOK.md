@@ -1,6 +1,14 @@
-# 🎬 E-Commerce Data Lakehouse: End-to-End Demo & Execution Runbook
+# ⚡ Fast Demo Mode (Recommended for Video Recording)
 
-This guide provides a step-by-step script for spinning up the entire project from a complete cold start, running each subsystem, proving reliability & performance features, and recording a portfolio video demo.
+> 💡 **Why Demo Mode?**  
+> The full Kaggle e-commerce dataset is **~15 GB** (`2019-Oct.csv` 5.3GB + `2019-Nov.csv` 8.4GB). Processing 15 GB of raw CSV files locally on a single machine freezes local RAM, CPU, and disk I/O.  
+> **Demo Mode** extracts a clean 50,000-row sample (~6 MB) using `python scripts/create_demo_sample.py`. This executes the **exact same PySpark transforms, Delta MERGE, Soda Quality Gates, dbt models (83 tests), and Airflow DAG** in under **30 seconds** without locking your laptop!
+
+### 🚀 One-Command Fast Demo Execution:
+```bash
+# Generate 6MB sample dataset and execute complete pipeline end-to-end in 30s!
+make run-demo
+```
 
 ---
 
