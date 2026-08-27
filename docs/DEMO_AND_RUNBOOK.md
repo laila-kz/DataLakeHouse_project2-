@@ -1,182 +1,174 @@
-# ⚡ Fast Demo Mode (Recommended for Video Recording)
+# 🎬 E-Commerce Data Lakehouse: Complete Video Demo Runbook
 
-> 💡 **Why Demo Mode?**  
-> The full Kaggle e-commerce dataset is **~15 GB** (`2019-Oct.csv` 5.3GB + `2019-Nov.csv` 8.4GB). Processing 15 GB of raw CSV files locally on a single machine freezes local RAM, CPU, and disk I/O.  
-> **Demo Mode** extracts a clean 50,000-row sample (~6 MB) using `python scripts/create_demo_sample.py`. This executes the **exact same PySpark transforms, Delta MERGE, Soda Quality Gates, dbt models (83 tests), and Airflow DAG** in under **30 seconds** without locking your laptop!
+This guide provides an exact, step-by-step master script for recording a portfolio video demo from a complete cold start. It uses **Fast Demo Mode** (lightweight sample dataset) so the entire end-to-end pipeline runs smoothly in seconds on your local laptop without CPU/RAM bottlenecks.
 
-### 🚀 One-Command Fast Demo Execution:
+---
+
+## ⚡ Quick Reference Execution Summary
+
 ```bash
-# Generate 6MB sample dataset and execute complete pipeline end-to-end in 30s!
-make run-demo
+# 1. Start Fresh Environment
+make setup
+
+# 2. Step 1: Shift-Left Data Contracts Validation & Quarantine
+make test-contracts
+
+# 3. Step 2: Generate Demo Dataset & Ingest to MinIO
+python scripts/create_demo_sample.py
+python ingestion/kaggle_ingest.py --data-dir ./data/demo_sample --force
+
+# 4. Step 3: PySpark Bronze & Silver MERGE Transforms
+make run-bronze
+make run-silver
+
+# 5. Step 4: dbt Models & Full Test Suite (83 Data Tests)
+make run-dbt
+make test-dbt
+
+# 6. Step 5: PySpark Optimization & Performance Benchmarks
+make run-benchmarks
 ```
 
 ---
 
-## 📋 1. Prerequisites & Cold-Start Setup
+## 📋 1. Cold-Start Setup & Prerequisites
 
-### Environment Variables (`.env`)
-Ensure `.env` exists at the repository root with credentials:
-
-```bash
+### Check `.env` Configuration
+Ensure `.env` exists at project root:
+```env
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=minioadmin
 MINIO_ENDPOINT=http://localhost:9000
-KAGGLE_USERNAME=your_kaggle_username
-KAGGLE_KEY=your_kaggle_key
+KAGGLE_USERNAME=your_username
+KAGGLE_KEY=your_key
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 ```
 
-### Start Clean Docker Stack
+### Cold-Start Reset
 ```bash
-# 1. Clean up any existing state (optional cold-start wipe)
-docker compose down -v
-
-# 2. Build and start all services (Airflow, Spark, MinIO, Metabase)
-docker compose up -d --build
-
-# 3. Create required MinIO S3 buckets (raw, bronze, silver, gold, reference, logs)
-python scripts/create_buckets.py
+# Clean previous state and initialize Docker services + MinIO S3 buckets
+make clean
+make setup
 ```
 
 ---
 
-## 🎥 2. Live Demo Script (Step-by-Step Execution Sequence)
+## 🎥 2. Master Live Video Demo Script
 
-### 🛡️ Step 1: Data Contract Enforcement & Raw Quarantine (Shift-Left Governance)
+### 🛡️ Step 1: Shift-Left Data Contracts & Schema Quarantine
 
-**Demo Point:** Show how the pipeline prevents frontend/upstream schema drift from breaking downstream models.
+**Voiceover / Talking Point:** *"Before any data enters our lakehouse, we enforce strict shift-left Data Contracts using a custom CLI engine (`contract_cli.py`) to prevent upstream schema drift from breaking downstream models."*
 
 ```bash
 # 1A. Validate a CLEAN incoming dataset -> PASSES
 python contracts/contract_cli.py \
-  --input-file ./data/test_valid.csv \
-  --contract-file ./contracts/schemas/ecommerce_events_v1.yml
+  --input-file data/test_valid.csv \
+  --contract-file contracts/schemas/ecommerce_events_v1.yml
 
 # 1B. Validate a BREAKING schema dataset -> FAILS, QUARANTINES payload, logs violation report
 python contracts/contract_cli.py \
-  --input-file ./data/test_breaking.csv \
-  --contract-file ./contracts/schemas/ecommerce_events_v1.yml
-
-# Check the quarantine directory and generated JSON violation log
-ls -la data/quarantine/
-cat logs/contract_violation_*.json
+  --input-file data/test_breaking.csv \
+  --contract-file contracts/schemas/ecommerce_events_v1.yml
 ```
+
+**Visuals to show on screen:**
+- Terminal output showing `[SUCCESS]` vs `[FAILED]`.
+- Quarantined file in `data/quarantine/` and generated violation log in `logs/contract_violation_*.json`.
 
 ---
 
-### 📥 Step 2: Automated Ingestion & PySpark Bronze Layer
+### 📥 Step 2: Demo Dataset Generation & MinIO Raw Ingestion
 
-**Demo Point:** Fetch clickstream events and write to MinIO Bronze Delta Lake with explicit struct schema enforcement.
+**Voiceover / Talking Point:** *"We extract a clean 50k-row clickstream sample for fast demo execution, ingesting raw events into MinIO S3 raw bucket (`s3a://raw/ecommerce_events/`)."*
 
 ```bash
-# 2A. Ingest Raw Clickstream Data
-python ingestion/kaggle_ingest.py
+# 2A. Generate 6MB Demo Dataset
+python scripts/create_demo_sample.py
 
-# 2B. Run PySpark Bronze Transformation
-docker compose exec spark /opt/spark/bin/spark-submit \
-  --jars /opt/spark/jars-extra/*.jar \
-  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  /workspace/spark_jobs/bronze_transform.py
-
-# 2C. Run Bronze Soda Quality Gate Scan
-docker compose exec spark bash -lc \
-  "cd /opt/spark/work-dir && python3 soda/run_soda_scan.py s3a://bronze/ecommerce_events/ soda/checks/bronze_checks.yml soda/configurations/spark_configuration.yml"
+# 2B. Ingest Demo Sample to MinIO Raw Bucket
+python ingestion/kaggle_ingest.py --data-dir ./data/demo_sample --force
 ```
+
+**Visuals to show on screen:**
+- MinIO Object Browser (`http://localhost:9001`) showing raw files uploaded to `s3a://raw/ecommerce_events/`.
 
 ---
 
-### 🔄 Step 3: Incremental Silver MERGE & Crash-Recovery Proof
+### 🥉 Step 3: PySpark Bronze & Incremental Silver MERGE Layer
 
-**Demo Point:** SHA-256 deduplication and watermark isolation guaranteeing zero data loss or duplication even after process crashes.
+**Voiceover / Talking Point:** *"PySpark parses raw events into a schema-enforced Bronze Delta Lake table. Then, our Silver layer performs incremental MERGE using SHA-256 event keys and watermark isolation."*
 
 ```bash
-# 3A. Run Silver Transform (Incremental MERGE)
-docker compose exec spark /opt/spark/bin/spark-submit \
-  --jars /opt/spark/jars-extra/*.jar \
-  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  /workspace/spark_jobs/silver_transform.py
+# 3A. Run Bronze PySpark Transformation
+make run-bronze
 
-# 3B. [PROPERTIES FLEX] Crash Simulation & Recovery Proof
-# Trigger crash immediately after MERGE execution before watermark update:
-docker compose exec spark bash -c \
-  "SIMULATE_CRASH_AFTER_MERGE=true /opt/spark/bin/spark-submit --jars /opt/spark/jars-extra/*.jar --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog /workspace/spark_jobs/silver_transform.py"
+# 3B. Run Silver Incremental MERGE Transformation
+make run-silver
 
-# Re-run recovery — watermark stays intact, MERGE deduplicates via SHA-256 key, zero duplicate rows!
-docker compose exec spark /opt/spark/bin/spark-submit \
-  --jars /opt/spark/jars-extra/*.jar \
-  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  /workspace/spark_jobs/silver_transform.py
+# 3C. [PROPERTIES FLEX] Crash Simulation & Recovery Proof (Optional)
+# Inject crash after MERGE commit before watermark update:
+docker compose exec spark bash -c "SIMULATE_CRASH_AFTER_MERGE=true /opt/spark/bin/spark-submit --driver-memory 2g --executor-memory 2g --jars /opt/spark/jars-extra/*.jar --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog /workspace/spark_jobs/silver_transform.py"
 
-# 3C. Run Silver Quality Gate
-docker compose exec spark python3 soda/run_silver_scan.py
+# Run recovery — watermark re-reads safely, MERGE deduplicates via SHA-256 key with 0 duplicate rows!
+make run-silver
 ```
+
+**Visuals to show on screen:**
+- Terminal JSON logs showing batch processing, MERGE execution, and watermark advancement.
 
 ---
 
-### 📊 Step 4: dbt Dimensional Modeling & Gold Marts (83/83 Tests)
+### 📊 Step 4: dbt Dimensional Warehouse & Test Suite (83/83 PASS)
 
-**Demo Point:** Build 13 dbt models (Staging ➔ Sessionization ➔ Star Schema ➔ Gold Marts) and execute data tests.
+**Voiceover / Talking Point:** *"dbt transforms Silver events into a star schema (`dim_date`, `dim_customer`, `dim_product` SCD2, `fact_events`, `fact_purchases`) and Gold business marts (`mart_daily_summary`, `mart_customer_retention`)."*
 
 ```bash
-# 4A. Run Full dbt Project (DuckDB backend)
-cd dbt
-dbt run --profiles-dir .
+# 4A. Run dbt Transformations
+make run-dbt
 
 # 4B. Run Full dbt Test Suite (83 Data Tests & Domain Invariants)
-dbt test --profiles-dir .
-cd ..
+make test-dbt
 ```
 
----
-
-### ⚙️ Step 5: Full Airflow Orchestration & Automated DAG Execution
-
-**Demo Point:** Show the entire 10-task pipeline executing automatically under Apache Airflow.
-
-1. Open Web Browser to **Airflow Webserver**: [`http://localhost:8080`](http://localhost:8080) (Login: `airflow` / `airflow`).
-2. Navigate to DAG: `ecommerce_lakehouse`.
-3. Click **Trigger DAG**.
-4. Watch all 10 tasks turn green:
-   `ingest_raw` ➔ `bronze_transform` ➔ `bronze_quality_gate` ➔ `silver_transform` ➔ `silver_quality_gate` ➔ `dbt_run_staging` ➔ `dbt_run_intermediate` ➔ `dbt_run_dims_facts` ➔ `dbt_run_marts` ➔ `dbt_test_full`.
+**Visuals to show on screen:**
+- Terminal green test summary showing `PASS=83 WARN=0 ERROR=0 TOTAL=83`.
 
 ---
 
-### 🚀 Step 6: PySpark Optimization & Performance Benchmarking
+### ⚙️ Step 5: Apache Airflow DAG Orchestration
 
-**Demo Point:** Empirically prove distributed computing optimization results.
+**Voiceover / Talking Point:** *"The entire 10-step pipeline operates as a scheduled Airflow DAG (`ecommerce_lakehouse`) with quality-gate halting semantics and automatic retries."*
+
+1. Open Browser to Airflow UI: [`http://localhost:8080`](http://localhost:8080) (Login: `airflow` / `airflow`).
+2. Trigger `ecommerce_lakehouse` DAG.
+3. Watch the graph view turn green across all 10 tasks!
+
+---
+
+### 🚀 Step 6: PySpark Performance Benchmarking
+
+**Voiceover / Talking Point:** *"We benchmark our lakehouse optimizations, empirically proving ~3.0x speedups via Delta Z-Ordering and ~3.2x speedups via Broadcast Hash Joins."*
 
 ```bash
-# Run Spark Benchmark Suite
-python spark_jobs/spark_benchmark.py
-
-# Inspect Generated Markdown Performance Report
-cat docs/performance_benchmarks.md
+# Run Optimization Benchmark Suite
+make run-benchmarks
 ```
 
----
-
-## 🖥️ 3. Key Visual Elements for Your Video Recording
-
-When recording your video demo (e.g. via Loom or OBS), show these 4 key visuals:
-
-1. **MinIO Object Console** (`http://localhost:9001`):
-   - Show `raw/`, `bronze/`, `silver/`, and `data/quarantine/` buckets.
-2. **Airflow DAG Graph View** (`http://localhost:8080`):
-   - Show the 10 green task nodes executing sequentially with Soda quality gates between transforms.
-3. **Terminal Structured JSON Logs**:
-   - Show clean JSON formatted logs emitted by `kaggle_ingest.py`, `silver_transform.py`, and `contract_cli.py`.
-4. **Performance Benchmark Report** (`docs/performance_benchmarks.md`):
-   - Highlight **~3.0x Z-Order speedup** and **~3.2x Broadcast Join speedup**.
+**Visuals to show on screen:**
+- Open [`docs/performance_benchmarks.md`](file:///c:/Users/kheza/Desktop/Data%20Engineering/DataLakehouse/docs/performance_benchmarks.md) showing the formatted benchmark report tables!
 
 ---
 
-## 🛠️ 4. Final Documentation Polish Checklist
+## 🎙️ 3. Recommended 90-Second Video Voiceover Script
 
-- [x] **Master Architecture Diagram**: Mermaid diagram present in [`README.md`](file:///c:/Users/kheza/Desktop/Data%20Engineering/DataLakehouse/README.md).
-- [x] **CI/CD Workflow Badge**: GitHub Actions CI workflow in [`.github/workflows/ci.yml`](file:///c:/Users/kheza/Desktop/Data%20Engineering/DataLakehouse/.github/workflows/ci.yml).
-- [x] **Design Decisions Record**: Complete day-by-day technical log in [`docs/design_decisions.md`](file:///c:/Users/kheza/Desktop/Data%20Engineering/DataLakehouse/docs/design_decisions.md).
-- [x] **Performance Benchmarks**: Case study report in [`docs/performance_benchmarks.md`](file:///c:/Users/kheza/Desktop/Data%20Engineering/DataLakehouse/docs/performance_benchmarks.md).
-- [x] **Release Tag**: Latest release tagged `v1.2-week9-contracts-benchmarking-complete`.
+> *"Hi everyone, welcome to the demo of my E-Commerce Behavioral Analytics Data Lakehouse.
+> 
+> Before data enters the pipeline, our custom Data Contract engine validates incoming raw clickstream batches against explicit YAML contracts, automatically quarantining breaking schema changes to S3 quarantine prefixes with Slack diff alerts.
+> 
+> The architecture follows a Medallion pattern: raw CSVs are parsed by PySpark into a Delta Lake Bronze layer with explicit struct schema enforcement and Soda Core quality gates. Our Silver layer executes incremental MERGE using SHA-256 deduplication keys and watermark tracking—proven to recover cleanly from process crashes with zero duplicate rows.
+> 
+> On the warehouse side, dbt builds a star schema featuring 30-minute idle sessionization, Type 2 Slowly Changing Dimensions (SCD2) for product price history, and Gold business marts for daily category rollups and cohort retention. All 83 dbt data tests pass cleanly.
+> 
+> The entire 10-step pipeline is orchestrated by Apache Airflow with quality-gate exit code halting, dual failure alerting, and GitHub Actions CI/CD. Finally, our Spark benchmarking suite demonstrates ~3.0x query speedups using Delta Z-Ordering and ~3.2x speedups via Broadcast Joins.
+> 
+> Thanks for watching!"*
