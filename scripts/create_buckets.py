@@ -25,12 +25,13 @@ def create_buckets():
     for bucket in buckets:
         try:
             client.create_bucket(Bucket=bucket)
-            print(f"✅ Created bucket: {bucket}")
+            print(f"[CREATED] Bucket: {bucket}")
         except ClientError as e:
-            if e.response['Error']['Code'] == 'BucketAlreadyExists':
-                print(f"⏭️  Bucket already exists: {bucket}")
+            code = e.response.get('Error', {}).get('Code', '')
+            if code in ['BucketAlreadyExists', 'BucketAlreadyOwnedByYou']:
+                print(f"[EXISTS] Bucket already exists: {bucket}")
             else:
-                print(f"❌ Error creating {bucket}: {e}")
+                print(f"[ERROR] Error creating {bucket}: {e}")
 
 if __name__ == "__main__":
     create_buckets()
