@@ -44,10 +44,17 @@ dag = DAG(
     max_active_runs=1,
 )
 
+SPARK_SUBMIT_PREFIX = (
+    "docker exec spark /opt/spark/bin/spark-submit "
+    "--driver-memory 2g --executor-memory 2g "
+    "--conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension "
+    "--conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog"
+)
+
 # 1. Ingestion Layer
 ingest_raw = BashOperator(
     task_id='ingest_raw',
-    bash_command=f'python {PROJECT_DIR}/ingestion/kaggle_ingest.py --date {{{{ ds }}}}',
+    bash_command=f'python {PROJECT_DIR}/ingestion/kaggle_ingest.py --data-dir {PROJECT_DIR}/data/demo_sample --force',
     cwd=PROJECT_DIR,
     execution_timeout=timedelta(minutes=10),
     dag=dag,
@@ -56,7 +63,7 @@ ingest_raw = BashOperator(
 # 2. Bronze Transform
 bronze_transform = BashOperator(
     task_id='bronze_transform',
-    bash_command=f'python {PROJECT_DIR}/spark_jobs/bronze_transform.py',
+    bash_command=f'{SPARK_SUBMIT_PREFIX} /workspace/spark_jobs/bronze_transform.py',
     cwd=PROJECT_DIR,
     execution_timeout=timedelta(minutes=25),
     dag=dag,
@@ -65,7 +72,7 @@ bronze_transform = BashOperator(
 # 3. Bronze Quality Gate (MUST PASS)
 bronze_quality_gate = BashOperator(
     task_id='bronze_quality_gate',
-    bash_command=f'python {PROJECT_DIR}/checks/run_quality_gate.py --layer bronze',
+    bash_command=f'{SPARK_SUBMIT_PREFIX} /workspace/checks/run_quality_gate.py --layer bronze',
     cwd=PROJECT_DIR,
     execution_timeout=timedelta(minutes=10),
     dag=dag,
@@ -74,7 +81,7 @@ bronze_quality_gate = BashOperator(
 # 4. Silver Transform (Incremental with watermark & SHA-256 deduplication)
 silver_transform = BashOperator(
     task_id='silver_transform',
-    bash_command=f'python {PROJECT_DIR}/spark_jobs/silver_transform.py --batch-id {{{{ run_id }}}}',
+    bash_command=f'{SPARK_SUBMIT_PREFIX} /workspace/spark_jobs/silver_transform.py --batch-id {{{{ run_id }}}}',
     cwd=PROJECT_DIR,
     execution_timeout=timedelta(minutes=25),
     dag=dag,
@@ -83,7 +90,7 @@ silver_transform = BashOperator(
 # 5. Silver Quality Gate (MUST PASS)
 silver_quality_gate = BashOperator(
     task_id='silver_quality_gate',
-    bash_command=f'python {PROJECT_DIR}/checks/run_quality_gate.py --layer silver',
+    bash_command=f'{SPARK_SUBMIT_PREFIX} /workspace/checks/run_quality_gate.py --layer silver',
     cwd=PROJECT_DIR,
     execution_timeout=timedelta(minutes=10),
     dag=dag,
