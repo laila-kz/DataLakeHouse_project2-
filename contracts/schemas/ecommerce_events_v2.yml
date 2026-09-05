@@ -1,0 +1,74 @@
+dataset_name: "ecommerce_events"
+version: "2.0.0"
+description: "Data Contract v2.0 - Extended clickstream with device and referrer metadata"
+owner: "data-platform-team@company.com"
+
+sla:
+  max_latency_hours: 12
+  max_null_percentage_overall: 5.0
+
+columns:
+  event_time:
+    type: "timestamp"
+    required: true
+    nullable: false
+
+  event_type:
+    type: "string"
+    required: true
+    nullable: false
+    allowed_values:
+      - "view"
+      - "cart"
+      - "remove_from_cart"
+      - "purchase"
+
+  product_id:
+    type: "long"
+    required: true
+    nullable: false
+
+  category_id:
+    type: "long"
+    required: false
+    nullable: true
+
+  category_code:
+    type: "string"
+    required: false
+    nullable: true
+
+  brand:
+    type: "string"
+    required: false
+    nullable: true
+
+  price:
+    type: "double"
+    required: true
+    nullable: true
+    min_value: 0.0
+
+  user_id:
+    type: "long"
+    required: true
+    nullable: false
+
+  user_session:
+    type: "string"
+    required: true
+    nullable: false
+
+  device_type:
+    type: "string"
+    required: false
+    nullable: true
+    allowed_values:
+      - "mobile"
+      - "desktop"
+      - "tablet"
+
+  currency:
+    type: "string"
+    required: false
+    nullable: true

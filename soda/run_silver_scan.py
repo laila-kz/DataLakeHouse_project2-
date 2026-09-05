@@ -38,11 +38,13 @@ def run_silver_scan():
         return 1
 
     # 3. Configure and execute Soda Scan in-memory
+    from pathlib import Path
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
     scan = Scan()
     scan.set_data_source_name("spark_df")
     scan.add_spark_session(spark)
-    scan.add_configuration_yaml_file("soda/configurations/spark_configuration.yml")
-    scan.add_sodacl_yaml_file("soda/checks/silver_checks.yml")
+    scan.add_configuration_yaml_file(str(PROJECT_ROOT / "soda/configurations/spark_configuration.yml"))
+    scan.add_sodacl_yaml_file(str(PROJECT_ROOT / "soda/checks/silver_checks.yml"))
 
     print("🚀 Executing Soda Scan...")
     exit_code = scan.execute()

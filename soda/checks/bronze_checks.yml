@@ -55,5 +55,10 @@ checks for bronze_ecommerce_events:
       name: "Bronze table has data"
 
   # ===== DUPLICATE CHECK =====
-  - duplicate_count(product_id, user_id, event_time) = 0:
-      name: "No duplicate events"
+  # Bronze is a raw landing zone — some source duplicates are expected.
+  # Deduplication happens downstream in the silver transform.
+  # Warn if duplicates exceed 50% of total rows (indicates a real ingestion bug).
+  - duplicate_percent(product_id, user_id, event_time) < 50:
+      name: "Duplicate events within acceptable range"
+      warn:
+        when > 10

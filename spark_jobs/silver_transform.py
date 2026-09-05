@@ -9,7 +9,7 @@ import uuid
 import json
 import logging
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
@@ -79,6 +79,28 @@ def parse_args():
         "--silver-path",
         default="s3a://silver/ecommerce_events/",
         help="Path to Silver Delta table",
+    )
+    parser.add_argument(
+        "--lookback-days",
+        type=int,
+        default=3,
+        help="Days of allowed lateness buffer when filtering by watermark",
+    )
+    parser.add_argument(
+        "--mode",
+        default="incremental",
+        choices=["incremental", "backfill"],
+        help="Processing mode: incremental (watermark-guided) or backfill (watermark-isolated)",
+    )
+    parser.add_argument(
+        "--start-date",
+        default=None,
+        help="Optional start date for backfills (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--end-date",
+        default=None,
+        help="Optional end date for backfills (YYYY-MM-DD)",
     )
     parser.add_argument(
         "--log-level",
@@ -160,27 +182,62 @@ def read_watermark(spark, silver_path, logger):
         return None
 
 
-def read_bronze_new_rows(spark, bronze_path, watermark_value, logger):
+def read_bronze_new_rows(
+    spark,
+    bronze_path,
+    watermark_value,
+    logger,
+    lookback_days=3,
+    mode="incremental",
+    start_date=None,
+    end_date=None,
+):
     """
-    Read Bronze rows with event_time > watermark_value
-    If watermark_value is None, read all rows
+    Read Bronze rows.
+    - If mode == 'backfill': reads within optional [start_date, end_date] or all rows.
+    - If mode == 'incremental' and watermark exists: applies allowed lateness lookback buffer
+      (event_time >= watermark - lookback_days) so late-arriving records are not dropped.
     """
     logger.info(
         "Reading Bronze rows",
         extra={
             "event": "bronze_read_start",
             "path": bronze_path,
+            "mode": mode,
             "watermark": str(watermark_value) if watermark_value else "NONE (first run)",
+            "lookback_days": lookback_days if watermark_value and mode == "incremental" else 0,
         },
     )
 
     bronze_df = spark.read.format("delta").load(bronze_path)
 
-    if watermark_value:
-        bronze_df = bronze_df.filter(col("event_time") > watermark_value)
+    if mode == "backfill":
+        if start_date:
+            bronze_df = bronze_df.filter(col("event_time") >= start_date)
+        if end_date:
+            bronze_df = bronze_df.filter(col("event_time") <= end_date)
         logger.info(
-            "Filtering by watermark",
-            extra={"event": "watermark_filter_applied", "watermark": str(watermark_value)},
+            "Backfill range applied",
+            extra={"event": "backfill_filter_applied", "start": start_date, "end": end_date},
+        )
+    elif watermark_value:
+        if isinstance(watermark_value, (datetime,)):
+            effective_cutoff = watermark_value - timedelta(days=lookback_days)
+        else:
+            try:
+                dt = datetime.fromisoformat(str(watermark_value).replace("Z", "+00:00"))
+                effective_cutoff = dt - timedelta(days=lookback_days)
+            except Exception:
+                effective_cutoff = watermark_value
+
+        bronze_df = bronze_df.filter(col("event_time") >= effective_cutoff)
+        logger.info(
+            "Filtering by watermark with lateness buffer",
+            extra={
+                "event": "watermark_filter_applied",
+                "watermark": str(watermark_value),
+                "lookback_cutoff": str(effective_cutoff),
+            },
         )
     else:
         logger.info(
@@ -194,7 +251,8 @@ def read_bronze_new_rows(spark, bronze_path, watermark_value, logger):
         extra={
             "event": "bronze_read_complete",
             "row_count": row_count,
-            "filtered_by_watermark": watermark_value is not None,
+            "mode": mode,
+            "filtered_by_watermark": watermark_value is not None and mode == "incremental",
         },
     )
 
@@ -553,8 +611,17 @@ def main():
 
     spark = create_spark_session(logger)
     try:
-        watermark_value = read_watermark(spark, args.silver_path, logger)
-        bronze_df = read_bronze_new_rows(spark, args.bronze_path, watermark_value, logger)
+        watermark_value = read_watermark(spark, args.silver_path, logger) if args.mode == "incremental" else None
+        bronze_df = read_bronze_new_rows(
+            spark,
+            args.bronze_path,
+            watermark_value,
+            logger,
+            lookback_days=args.lookback_days,
+            mode=args.mode,
+            start_date=args.start_date,
+            end_date=args.end_date,
+        )
 
         if bronze_df.count() == 0:
             logger.info(
@@ -589,25 +656,32 @@ def main():
             raise RuntimeError("MERGE verification failed")
 
         #****************************************************
-        # ===== SIMULATED CRASH INJECTION POINT =====
-        # ===== TESTING: Simulated Crash Injection =====
-        # This is a permanent testing feature. Set SIMULATE_CRASH_AFTER_MERGE=true
-        # to test crash recovery behavior. This code is intentionally retained as a
-        # repeatable regression test for the crash-safety boundary.
-        # DO NOT remove - it's a documented testing tool.
-        if os.environ.get("SIMULATE_CRASH_AFTER_MERGE") == "true":
+        # ===== SIMULATED CRASH INJECTION POINTS =====
+        # Named failure test matrix hooks for failure-injection testing
+        if (
+            os.environ.get("SIMULATE_CRASH_AFTER_MERGE") == "true"
+            or os.environ.get("FAIL_AFTER_SILVER_MERGE") == "true"
+            or os.environ.get("FAIL_BEFORE_WATERMARK_UPDATE") == "true"
+        ):
             logger.warning(
-                "SIMULATED CRASH triggered after MERGE verification",
+                "SIMULATED CRASH triggered: MERGE verified, halting before watermark advance",
                 extra={
                     "event": "simulated_crash",
-                    "location": "after_merge_verification_before_watermark",
-                    "message": "This is a test crash - the MERGE completed successfully but watermark was NOT advanced"
+                    "location": "after_silver_merge_before_watermark",
+                    "batch_id": args.batch_id,
                 }
             )
-            raise RuntimeError("Simulated crash for testing - MERGE completed, watermark NOT advanced")
+            raise RuntimeError("Simulated crash: MERGE committed, watermark NOT advanced")
         #****************************************************
-        # ===== TASK 4: Advance watermark (ONLY AFTER verification) =====
-        advance_watermark(spark, args.silver_path, final_df, args.batch_id, logger)
+
+        # Advance watermark ONLY in incremental mode
+        if args.mode == "incremental":
+            advance_watermark(spark, args.silver_path, final_df, args.batch_id, logger)
+        else:
+            logger.info(
+                "Backfill mode active - skipping production watermark update to preserve forward state",
+                extra={"event": "watermark_skipped_for_backfill", "batch_id": args.batch_id}
+            )
 
         logger.info(
             "Silver transform completed",
@@ -615,6 +689,7 @@ def main():
                 "event": "job_completed",
                 "status": "success",
                 "batch_id": args.batch_id,
+                "mode": args.mode,
                 "rows_processed": final_df.count()
             }
         )

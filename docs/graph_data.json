@@ -1,0 +1,474 @@
+{
+  "meta": {
+    "generated_at": "2026-08-28T02:11:10.924761Z",
+    "source": "static fallback",
+    "node_count": 26,
+    "link_count": 31,
+    "layer_counts": {
+      "source": 1,
+      "landing": 1,
+      "orchestration": 3,
+      "bronze": 1,
+      "quality": 2,
+      "silver": 2,
+      "gold": 13,
+      "bi": 3
+    },
+    "project": "E-Commerce Data Lakehouse"
+  },
+  "nodes": [
+    {
+      "id": "infra.kaggle_csv",
+      "name": "Kaggle CSV Dataset",
+      "resource_type": "external",
+      "layer": "source",
+      "tooltip": "<b>Kaggle CSV Dataset</b><br/>~4M e-commerce click events<br/>Layer: SOURCE<br/>Demo: 50k-row fast sample",
+      "color": "#f97316",
+      "val": 10
+    },
+    {
+      "id": "infra.minio_raw",
+      "name": "MinIO raw/",
+      "resource_type": "object_store",
+      "layer": "landing",
+      "tooltip": "<b>MinIO raw/ bucket</b><br/>Layer: LANDING<br/>Format: Parquet (partitioned by event_date)<br/>Ingested by: kaggle_ingest.py",
+      "color": "#facc15",
+      "val": 9
+    },
+    {
+      "id": "airflow.ingest_raw",
+      "name": "Airflow: ingest_raw",
+      "resource_type": "airflow_task",
+      "layer": "orchestration",
+      "tooltip": "<b>Airflow Task: ingest_raw</b><br/>BashOperator<br/>Runs: kaggle_ingest.py<br/>Schedule: @daily",
+      "color": "#38bdf8",
+      "val": 6
+    },
+    {
+      "id": "airflow.bronze_transform",
+      "name": "Airflow: bronze_transform",
+      "resource_type": "airflow_task",
+      "layer": "orchestration",
+      "tooltip": "<b>Airflow Task: bronze_transform</b><br/>spark-submit via docker exec<br/>Output: s3a://bronze/",
+      "color": "#38bdf8",
+      "val": 6
+    },
+    {
+      "id": "infra.bronze_delta",
+      "name": "Bronze Delta Table",
+      "resource_type": "delta_table",
+      "layer": "bronze",
+      "tooltip": "<b>Bronze Delta Table</b><br/>s3a://bronze/ecommerce_events/<br/>Format: Delta Lake<br/>+ingested_at, source_file, pipeline_run_id",
+      "color": "#cd7f32",
+      "val": 8
+    },
+    {
+      "id": "airflow.bronze_quality_gate",
+      "name": "Soda: Bronze Gate",
+      "resource_type": "quality_gate",
+      "layer": "quality",
+      "tooltip": "<b>Bronze Quality Gate</b><br/>Soda Core + PySpark<br/>11 checks: schema, nulls, freshness, duplicates<br/>Blocks pipeline on FAIL",
+      "color": "#4ade80",
+      "val": 6
+    },
+    {
+      "id": "airflow.silver_transform",
+      "name": "Airflow: silver_transform",
+      "resource_type": "airflow_task",
+      "layer": "orchestration",
+      "tooltip": "<b>Airflow Task: silver_transform</b><br/>spark-submit via docker exec<br/>SHA-256 deduplication, Delta MERGE",
+      "color": "#38bdf8",
+      "val": 6
+    },
+    {
+      "id": "infra.silver_delta",
+      "name": "Silver Delta Table",
+      "resource_type": "delta_table",
+      "layer": "silver",
+      "tooltip": "<b>Silver Delta Table</b><br/>s3a://silver/ecommerce_events/<br/>Deduplicated + quality-gated<br/>+event_key, product_category, price_bucket",
+      "color": "#c0c0c0",
+      "val": 8
+    },
+    {
+      "id": "airflow.silver_quality_gate",
+      "name": "Soda: Silver Gate",
+      "resource_type": "quality_gate",
+      "layer": "quality",
+      "tooltip": "<b>Silver Quality Gate</b><br/>Soda Core + PySpark<br/>Uniqueness, null rates, referential integrity<br/>Blocks dbt layer on FAIL",
+      "color": "#4ade80",
+      "val": 6
+    },
+    {
+      "id": "source.silver.ecommerce_events",
+      "name": "silver.ecommerce_events",
+      "resource_type": "source",
+      "layer": "silver",
+      "tooltip": "<b>silver.ecommerce_events</b><br/>dbt Source<br/>Layer: SILVER<br/>Quality-gated Delta Lake<br/>Freshness warn: 7d / error: 30d",
+      "color": "#c0c0c0",
+      "val": 8
+    },
+    {
+      "id": "model.ecommerce_lakehouse.stg_events",
+      "name": "stg_events",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>stg_events</b><br/>Staging Model<br/>Deduplicates by event_key, casts types, date_key",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.stg_products",
+      "name": "stg_products",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>stg_products</b><br/>Staging Model<br/>Distinct product catalogue from click events",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.int_events_enriched",
+      "name": "int_events_enriched",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>int_events_enriched</b><br/>Intermediate<br/>Events + product join, price_tier, category_hierarchy",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.int_sessions",
+      "name": "int_sessions",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>int_sessions</b><br/>Intermediate<br/>Session boundary detection (30-min inactivity gap)",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.int_customer_month_activity",
+      "name": "int_customer_month_activity",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>int_customer_month_activity</b><br/>Intermediate<br/>Monthly cohort roll-up per customer",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.dim_customer",
+      "name": "dim_customer",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>dim_customer</b><br/>Dimension<br/>SCD Type 1, lifetime spend bucket",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.dim_product",
+      "name": "dim_product",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>dim_product</b><br/>Dimension<br/>Product catalogue, price bands, brand normalisation",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.dim_date",
+      "name": "dim_date",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>dim_date</b><br/>Dimension<br/>Date spine: day/week/month/quarter/year, ISO weeks",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.fact_events",
+      "name": "fact_events",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>fact_events</b><br/>Fact Table<br/>Grain: one enriched click event<br/>FK: dim_customer, dim_product, dim_date",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.fact_purchases",
+      "name": "fact_purchases",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>fact_purchases</b><br/>Fact Table<br/>Purchase events only, revenue, session linkage",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.mart_daily_summary",
+      "name": "mart_daily_summary",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>mart_daily_summary</b><br/>Analytical Mart<br/>Daily totals: events, purchases, revenue, active users",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.mart_customer_retention",
+      "name": "mart_customer_retention",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>mart_customer_retention</b><br/>Analytical Mart<br/>Monthly cohort retention matrix",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "model.ecommerce_lakehouse.mart_category_performance",
+      "name": "mart_category_performance",
+      "resource_type": "model",
+      "layer": "gold",
+      "tooltip": "<b>mart_category_performance</b><br/>Analytical Mart<br/>MoM category revenue growth, conversion rates",
+      "color": "#ffd700",
+      "val": 7
+    },
+    {
+      "id": "exposure.ecommerce_lakehouse.daily_executive_dashboard",
+      "name": "Daily Executive Dashboard",
+      "resource_type": "exposure",
+      "layer": "bi",
+      "tooltip": "<b>Daily Executive Dashboard</b><br/>Metabase Dashboard<br/>KPIs: events, purchases, revenue, active users<br/>Audience: C-Suite",
+      "color": "#a78bfa",
+      "val": 12
+    },
+    {
+      "id": "exposure.ecommerce_lakehouse.retention_analytics_dashboard",
+      "name": "Retention Analytics Dashboard",
+      "resource_type": "exposure",
+      "layer": "bi",
+      "tooltip": "<b>Retention Analytics Dashboard</b><br/>Metabase Dashboard<br/>Cohort retention curves<br/>Audience: Growth Analytics",
+      "color": "#a78bfa",
+      "val": 12
+    },
+    {
+      "id": "exposure.ecommerce_lakehouse.category_performance_dashboard",
+      "name": "Category Performance Dashboard",
+      "resource_type": "exposure",
+      "layer": "bi",
+      "tooltip": "<b>Category Performance Dashboard</b><br/>Metabase Dashboard<br/>MoM category trends, top SKUs<br/>Audience: Merchandising",
+      "color": "#a78bfa",
+      "val": 12
+    }
+  ],
+  "links": [
+    {
+      "source": "infra.kaggle_csv",
+      "target": "airflow.ingest_raw",
+      "particle_speed": 0.008,
+      "particle_width": 3,
+      "particle_color": "#f97316"
+    },
+    {
+      "source": "airflow.ingest_raw",
+      "target": "infra.minio_raw",
+      "particle_speed": 0.007,
+      "particle_width": 1.5,
+      "particle_color": "#38bdf8"
+    },
+    {
+      "source": "infra.minio_raw",
+      "target": "airflow.bronze_transform",
+      "particle_speed": 0.006,
+      "particle_width": 3,
+      "particle_color": "#facc15"
+    },
+    {
+      "source": "airflow.bronze_transform",
+      "target": "infra.bronze_delta",
+      "particle_speed": 0.007,
+      "particle_width": 1.5,
+      "particle_color": "#38bdf8"
+    },
+    {
+      "source": "infra.bronze_delta",
+      "target": "airflow.bronze_quality_gate",
+      "particle_speed": 0.005,
+      "particle_width": 2.5,
+      "particle_color": "#cd7f32"
+    },
+    {
+      "source": "airflow.bronze_quality_gate",
+      "target": "airflow.silver_transform",
+      "particle_speed": 0.007,
+      "particle_width": 1.5,
+      "particle_color": "#4ade80"
+    },
+    {
+      "source": "airflow.silver_transform",
+      "target": "infra.silver_delta",
+      "particle_speed": 0.007,
+      "particle_width": 1.5,
+      "particle_color": "#38bdf8"
+    },
+    {
+      "source": "infra.silver_delta",
+      "target": "airflow.silver_quality_gate",
+      "particle_speed": 0.005,
+      "particle_width": 2.5,
+      "particle_color": "#c0c0c0"
+    },
+    {
+      "source": "infra.silver_delta",
+      "target": "source.silver.ecommerce_events",
+      "particle_speed": 0.005,
+      "particle_width": 2.5,
+      "particle_color": "#c0c0c0"
+    },
+    {
+      "source": "airflow.silver_quality_gate",
+      "target": "source.silver.ecommerce_events",
+      "particle_speed": 0.007,
+      "particle_width": 1.5,
+      "particle_color": "#4ade80"
+    },
+    {
+      "source": "source.silver.ecommerce_events",
+      "target": "model.ecommerce_lakehouse.stg_events",
+      "particle_speed": 0.005,
+      "particle_width": 2.5,
+      "particle_color": "#c0c0c0"
+    },
+    {
+      "source": "source.silver.ecommerce_events",
+      "target": "model.ecommerce_lakehouse.stg_products",
+      "particle_speed": 0.005,
+      "particle_width": 2.5,
+      "particle_color": "#c0c0c0"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.stg_events",
+      "target": "model.ecommerce_lakehouse.int_events_enriched",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.stg_events",
+      "target": "model.ecommerce_lakehouse.int_sessions",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.stg_events",
+      "target": "model.ecommerce_lakehouse.int_customer_month_activity",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.stg_products",
+      "target": "model.ecommerce_lakehouse.int_events_enriched",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.int_events_enriched",
+      "target": "model.ecommerce_lakehouse.dim_customer",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.int_events_enriched",
+      "target": "model.ecommerce_lakehouse.dim_product",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.int_events_enriched",
+      "target": "model.ecommerce_lakehouse.fact_events",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.int_events_enriched",
+      "target": "model.ecommerce_lakehouse.fact_purchases",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.int_sessions",
+      "target": "model.ecommerce_lakehouse.fact_events",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.stg_events",
+      "target": "model.ecommerce_lakehouse.dim_date",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.fact_events",
+      "target": "model.ecommerce_lakehouse.mart_daily_summary",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.fact_purchases",
+      "target": "model.ecommerce_lakehouse.mart_daily_summary",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.dim_customer",
+      "target": "model.ecommerce_lakehouse.mart_customer_retention",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.int_customer_month_activity",
+      "target": "model.ecommerce_lakehouse.mart_customer_retention",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.fact_purchases",
+      "target": "model.ecommerce_lakehouse.mart_category_performance",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.dim_product",
+      "target": "model.ecommerce_lakehouse.mart_category_performance",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.mart_daily_summary",
+      "target": "exposure.ecommerce_lakehouse.daily_executive_dashboard",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.mart_customer_retention",
+      "target": "exposure.ecommerce_lakehouse.retention_analytics_dashboard",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    },
+    {
+      "source": "model.ecommerce_lakehouse.mart_category_performance",
+      "target": "exposure.ecommerce_lakehouse.category_performance_dashboard",
+      "particle_speed": 0.004,
+      "particle_width": 2,
+      "particle_color": "#ffd700"
+    }
+  ]
+}

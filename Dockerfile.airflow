@@ -13,4 +13,6 @@ RUN pip install --no-cache-dir \
     boto3 \
     tenacity \
     python-dotenv \
-    requests
+    requests \
+    openlineage-python \
+    apache-airflow-providers-openlineage

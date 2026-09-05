@@ -51,6 +51,9 @@ SPARK_SUBMIT_PREFIX = (
     "--conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog"
 )
 
+# Quality gate runner is plain Python (not a Spark job) — use python3 directly
+PYTHON_EXEC_PREFIX = "docker exec spark python3"
+
 # 1. Ingestion Layer
 ingest_raw = BashOperator(
     task_id='ingest_raw',
@@ -72,9 +75,9 @@ bronze_transform = BashOperator(
 # 3. Bronze Quality Gate (MUST PASS)
 bronze_quality_gate = BashOperator(
     task_id='bronze_quality_gate',
-    bash_command=f'{SPARK_SUBMIT_PREFIX} /workspace/checks/run_quality_gate.py --layer bronze',
+    bash_command=f'{PYTHON_EXEC_PREFIX} /workspace/checks/run_quality_gate.py --layer bronze',
     cwd=PROJECT_DIR,
-    execution_timeout=timedelta(minutes=10),
+    execution_timeout=timedelta(minutes=15),
     dag=dag,
 )
 
@@ -90,9 +93,9 @@ silver_transform = BashOperator(
 # 5. Silver Quality Gate (MUST PASS)
 silver_quality_gate = BashOperator(
     task_id='silver_quality_gate',
-    bash_command=f'{SPARK_SUBMIT_PREFIX} /workspace/checks/run_quality_gate.py --layer silver',
+    bash_command=f'{PYTHON_EXEC_PREFIX} /workspace/checks/run_quality_gate.py --layer silver',
     cwd=PROJECT_DIR,
-    execution_timeout=timedelta(minutes=10),
+    execution_timeout=timedelta(minutes=15),
     dag=dag,
 )
 

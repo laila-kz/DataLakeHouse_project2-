@@ -64,12 +64,14 @@ def parse_args():
 
 # ===== Suite Runner Functions =====
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 def run_raw_checks(logger):
     """Run Raw layer quality checks"""
     logger.info("Running Raw checks", extra={"event": "raw_start"})
     
-    cmd = ["python3", "soda/run_raw_checks.py"]
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd())
+    cmd = ["python3", str(PROJECT_ROOT / "soda/run_raw_checks.py")]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(PROJECT_ROOT))
     
     logger.info(
         "Raw checks complete",
@@ -95,12 +97,12 @@ def run_bronze_checks(logger):
     
     cmd = [
         "python3", 
-        "soda/run_soda_scan.py",
+        str(PROJECT_ROOT / "soda/run_soda_scan.py"),
         "s3a://bronze/ecommerce_events/",
-        "soda/checks/bronze_checks.yml",
-        "soda/configurations/spark_configuration.yml"
+        str(PROJECT_ROOT / "soda/checks/bronze_checks.yml"),
+        str(PROJECT_ROOT / "soda/configurations/spark_configuration.yml")
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd())
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(PROJECT_ROOT))
     
     logger.info(
         "Bronze checks complete",
@@ -124,8 +126,8 @@ def run_silver_checks(logger):
     """Run Silver layer Soda checks"""
     logger.info("Running Silver checks", extra={"event": "silver_start"})
     
-    cmd = ["python3", "soda/run_silver_scan.py"]
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd())
+    cmd = ["python3", str(PROJECT_ROOT / "soda/run_silver_scan.py")]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(PROJECT_ROOT))
     
     logger.info(
         "Silver checks complete",

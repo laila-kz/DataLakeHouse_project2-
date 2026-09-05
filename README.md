@@ -1,288 +1,249 @@
-# Data Lakehouse Project
+# 🏛️ E-Commerce Lakehouse Platform
 
-## 📊 Project Overview
-A complete data lakehouse implementation using MinIO (storage), Spark (compute), Airflow (orchestration), and Metabase (BI). Built as a portfolio project to demonstrate modern data engineering practices.
+[![CI/CD Pipeline](https://github.com/laila-kz/DataLakeHouse_project2-/actions/workflows/ci.yml/badge.svg)](https://github.com/laila-kz/DataLakeHouse_project2-/actions/workflows/ci.yml)
+[![Delta Lake](https://img.shields.io/badge/Delta_Lake-00ADD8?style=flat&logo=apachespark&logoColor=white)](https://delta.io/)
+[![dbt](https://img.shields.io/badge/dbt-FF694B?style=flat&logo=dbt&logoColor=white)](https://www.getdbt.com/)
+[![DuckDB](https://img.shields.io/badge/DuckDB-FFF000?style=flat&logo=duckdb&logoColor=black)](https://duckdb.org/)
+[![Apache Airflow](https://img.shields.io/badge/Airflow-017CEE?style=flat&logo=apacheairflow&logoColor=white)](https://airflow.apache.org/)
+[![OpenLineage](https://img.shields.io/badge/OpenLineage-Marquez-blue?style=flat)](https://openlineage.io/)
 
----
-
-## 🏷️ Current Progress
-
-### ✅ Phase 0 Complete (Days 1–3) — Infrastructure
-- [x] Docker Compose stack with Airflow, Spark, MinIO, Metabase
-- [x] All services healthy with healthchecks
-- [x] 6 MinIO buckets: raw, bronze, silver, gold, reference, logs
-- [x] Spark ↔ MinIO connectivity via S3A connector
-- [x] Credentials secured in `.env`
-
-### ✅ Phase 1 Complete (Days 4–7) — Ingestion
-- [x] Kaggle API integration with env-var authentication
-- [x] Idempotent ingestion with MinIO-based `_SUCCESS` marker
-- [x] Structured JSON logging
-- [x] Retry with exponential backoff (tenacity)
-- [x] Partitioned data storage: `raw/ecommerce_events/ingested_date={date}/`
-
-### ✅ Phase 2–3 Complete (Days 8–17) — Bronze & Silver Layers
-- [x] PySpark Bronze transform with explicit struct schema
-- [x] Incremental Silver MERGE with SHA-256 deduplication key
-- [x] Watermark advancing only after successful MERGE commit
-- [x] Crash-recovery proven at MERGE/watermark boundary
-- [x] Three-layer Soda Core quality gate (Raw + Bronze + Silver)
-
-### ✅ Phase 4 Complete (Days 18–28) — dbt Staging & Sessionization
-- [x] Freshness-checked Silver source declaration
-- [x] `stg_events` + `stg_products` staging models (views)
-- [x] `int_events_enriched` — sessionized event table
-- [x] `int_sessions` — session boundary detection (30 min idle cutoff)
-- [x] Full singular and schema test suite passing
-
-### ✅ Phase 5 Complete (Days 29–35) — Dimensional Modeling & Facts
-- [x] `dim_date`, `dim_customer`, `dim_product` (Type 2 SCD via LAG/LEAD)
-- [x] `fact_events` + `fact_purchases` with time-ranged joins to `dim_product`
-- [x] 57/57 tests passing in full cold-start rebuild — tag `v0.7-week5-dimensional-model-complete`
-
-### ✅ Phase 6 Complete (Days 36–42) — Gold Business Marts & Exposures
-- [x] Design documented: business questions, grain, materialization strategy
-- [x] `mart_daily_summary` — incremental `(date, category_l1)` rollup
-- [x] `int_customer_month_activity` — customer-cohort month grid (intermediate)
-- [x] `mart_customer_retention` — cohort retention with month-0=100% and non-increasing-counts invariants
-- [x] `mart_category_performance` — period-over-period revenue growth with zero-division labels
-- [x] `exposures.yml` — 3 downstream dashboard consumers declared
-- [x] Scoped rebuild via `dbt run --select +exposure:daily_executive_dashboard` proven
-- [x] **83/83 tests passing** in clean-state full-refresh — tag `v0.9-week6-gold-marts-complete`
-
-### ✅ Phase 7 Complete (Days 43–49) — Airflow Orchestration & Reliability
-- [x] DAG design documented: task graph, retry backoff, gating halting semantics
-- [x] `lakehouse_pipeline.py` DAG implemented (ingestion → Bronze → Silver → dbt → tests)
-- [x] Crash recovery under Airflow automatic retry verified (zero duplicate rows)
-- [x] Dual failure alerting plugin (`slack_alert.py`) implemented (Slack primary + email fallback)
-- [x] Native Airflow CLI backfill runbook documented (`airflow dags backfill`)
-- [x] **100% automated end-to-end execution** passing from cold-start — tag `v1.0-week7-orchestration-complete`
-
-### ✅ Phase 8 Complete (Days 50–56) — CI/CD Pipeline Automation (GitHub Actions)
-- [x] `.github/workflows/ci.yml` GitHub Actions CI workflow implemented
-- [x] Automated Python linting (`flake8`) via `.flake8` configuration
-- [x] Automated dbt model compilation (`dbt parse` + `dbt compile`) via `.sqlfluff` configuration
-- [x] Automated script compilation & integrity verification
-- [x] **Zero-breakage PR merge gating** — tag `v1.1-week8-cicd-complete`
-
-### ✅ Phase 9 Complete (Days 57–63) — Data Contracts & Spark Performance Suite
-- [x] YAML Data Contract engine (`contracts/contract_cli.py` & `contracts/schemas/ecommerce_events_v1.yml`)
-- [x] Automated breaking schema quarantine (`data/quarantine/` or `s3a://raw/quarantine/`)
-- [x] Slack diff alert dispatching on contract violations
-- [x] PySpark Benchmarking Suite (`spark_jobs/spark_benchmark.py`) comparing Delta Z-Ordering, Broadcast Joins, & Partition Tuning
-- [x] Formatted Case Study Report generated at [`docs/performance_benchmarks.md`](file:///c:/Users/kheza/Desktop/Data%20Engineering/DataLakehouse/docs/performance_benchmarks.md) — tag `v1.2-week9-contracts-benchmarking-complete`
+A production-patterned local **Data Lakehouse Platform** built for high-volume e-commerce clickstream events. It combines **Apache Spark + Delta Lake** on **MinIO S3** for scalable transactional ingestion, automated **Soda Core quality gates**, a **YAML Data Contract engine**, **dbt + DuckDB** for dimensional modeling (SCD Type 2, sessionization, and business marts), orchestrated under **Apache Airflow** with end-to-end **OpenLineage metadata governance**.
 
 ---
 
-## ⚡ How the Pipeline Works
+## 🎯 Platform Mission & Core Architecture
 
-The entire data lakehouse operates as a single scheduled Airflow DAG (`ecommerce_lakehouse`) that runs daily (`@daily`). The pipeline processes data through strict, automated quality-gated stages:
+Traditional data platforms frequently suffer from three critical production problems:
+1. **Silent Data Drops & Watermark Regressions:** Incremental pipelines silently discard late-arriving events or corrupt state during restarts.
+2. **Schema Breakages & Uncontrolled Drift:** Upstream producers push breaking changes that crash downstream dashboards without quarantine controls.
+3. **Black-Box Metadata:** Inability to trace lineage, dataset versions, and blast radius across heterogeneous compute engines (Spark ➔ DuckDB).
+
+This project solves these challenges with a **reconciliation-first, crash-resilient local lakehouse**:
 
 ```mermaid
 graph TD
-    A[Kaggle API] -->|ingest_raw| B[(MinIO Raw Bucket)]
-    B -->|bronze_transform| C[(MinIO Bronze Delta)]
-    C -->|bronze_quality_gate| D{Soda Quality Gate}
-    D -->|PASS: exit 0| E[silver_transform]
-    D -->|FAIL: exit 1| X[HALT & Alert]
-    E -->|silver_quality_gate| F{Soda Quality Gate}
-    F -->|PASS: exit 0| G[dbt_run_staging]
-    F -->|FAIL: exit 1| X
-    G --> H[dbt_run_intermediate]
-    H --> I[dbt_run_dims_facts]
-    I --> J[dbt_run_marts]
-    J --> K[dbt_test_full]
-    K -->|83/83 PASS| L[Metabase Dashboards]
-    K -->|FAIL| X
+    subgraph Ingestion & Storage ["1. Storage & Ingestion"]
+        A[Kaggle API / Source CSVs] -->|kaggle_ingest.py| B[(MinIO: s3a://raw)]
+        B -->|Contract Gate: contract_cli.py| C{Contract Gate}
+        C -->|Valid| D[bronze_transform.py]
+        C -->|Breaking Schema| Q[(s3a://raw/quarantine/)]
+    end
+
+    subgraph Medallion Compute ["2. Medallion Processing (PySpark & Delta Lake)"]
+        D -->|Struct Schema Enforcement| E[(MinIO: s3a://bronze Delta)]
+        E -->|Soda Quality Gate| F{Bronze Gate}
+        F -->|Pass| G[silver_transform.py]
+        F -->|Fail| H[Halt & Slack Alert]
+        G -->|SHA-256 Dedup + MERGE| I[(MinIO: s3a://silver Delta)]
+        I -->|Soda Quality Gate| J{Silver Gate}
+        J -->|Pass| K[dbt_run_staging]
+        J -->|Fail| H
+    end
+
+    subgraph Analytics & Marts ["3. Dimensional Modeling (dbt + DuckDB)"]
+        K -->|Views| L[stg_events / stg_products]
+        L -->|30-min Idle Windowing| M[int_sessions / int_events_enriched]
+        M -->|SCD Type 2 & Star Schema| N[dim_customer / dim_product / dim_date]
+        N --> O[fact_events / fact_purchases]
+        O -->|Incremental delete+insert| P[mart_daily_summary / mart_retention / mart_category]
+        P -->|83 dbt Tests Passing| R[dbt Exposures & BI Dashboards]
+    end
+
+    subgraph Governance ["4. Enterprise Governance (OpenLineage + Marquez)"]
+        D -.->|Emit Lineage & Facets| OL[Marquez Metadata Server]
+        G -.->|Emit Delta Commits| OL
+        K -.->|Emit DAG Dependencies| OL
+        P -.->|Emit Test Status| OL
+    end
 ```
-
-### Operational Highlights
-1. **Automated Quality Gating:** Quality checks (`soda`) run between transforms. If a check fails, the gate script returns exit code `1`, immediately halting downstream steps via Airflow's `all_success` dependency rule.
-2. **Crash-Safe Retries:** If a transform fails mid-execution (e.g. after Delta `MERGE` before watermark advance), Airflow automatically retries. The job re-reads the prior watermark, performs a deterministic deduplication via SHA-256 key, and resumes cleanly without duplicate rows.
-3. **Dual Failure Alerting:** Task failure callbacks automatically dispatch detailed Slack Webhook notifications (including direct Airflow log links) with an automated fallback to email.
-
 
 ---
 
-## 🚀 Quick Start (One-Command Setup via `Makefile`)
+## 💼 Business Questions Answered
 
-Execute the complete end-to-end stack using the repository `Makefile`:
+The Gold layer dimensional model and analytical marts answer core e-commerce operational questions:
+
+1. **Executive Daily Performance (`mart_daily_summary`):**
+   - What is the daily revenue, active user count, and total event volume broken down by top-level category (`category_l1`)?
+   - Materialized incrementally via `delete+insert` on affected partition keys.
+2. **Customer Cohort Retention (`mart_customer_retention`):**
+   - How do monthly acquisition cohorts retain over time?
+   - Enforces domain invariants: Month-0 retention must equal 100%, and retained user count must be monotonically non-increasing.
+3. **Category Revenue Growth (`mart_category_performance`):**
+   - What is the month-over-month revenue growth rate per category, handling cold-start zero-division safely?
+4. **User Sessionization (`int_sessions`):**
+   - How do user interactions group into distinct browsing sessions based on a 30-minute inactivity threshold?
+
+---
+
+## 🏗️ Repository Structure
+
+```text
+.
+├── .github/workflows/          # CI/CD: Automated linting (flake8), dbt compilation, syntax verification
+├── airflow/                    # Airflow DAGs, plugins (Slack failure alerts), and demo samples
+│   ├── dags/
+│   │   └── lakehouse_pipeline.py  # Master 10-task automated orchestration DAG
+│   └── plugins/
+│       └── slack_alert.py         # Dual-channel failure alerting (Slack Webhook + Email)
+├── checks/                     # Quality gate runners and cross-layer reconciliation suites
+│   └── run_quality_gate.py     # Unified 3-layer Soda runner
+├── contracts/                  # Shift-left YAML data contract engine
+│   ├── contract_cli.py         # Contract validation CLI, diff analyzer, and quarantine router
+│   └── schemas/                # Versioned contract definitions (ecommerce_events_v1.yml)
+├── data/                       # Local test samples, sample CSVs, and dead-letter quarantine directories
+├── dbt/                        # dbt project configured with dbt-duckdb
+│   ├── models/
+│   │   ├── staging/            # 1:1 view models on Silver Delta tables (stg_events, stg_products)
+│   │   ├── intermediate/       # Sessionization window models (int_sessions, int_events_enriched)
+│   │   └── marts/              # Fact tables, SCD2 dimensions, and Gold business marts
+│   └── tests/                  # 83 generic, schema, and custom singular invariant tests
+├── docs/                       # Architectural documentation, ADRs, data dictionary, runbooks
+│   └── adr/                    # Architecture Decision Records (ADR-001 through ADR-006)
+├── ingestion/                  # Ingestion scripts (kaggle_ingest.py with retry backoff & MinIO markers)
+├── soda/                       # Soda Core quality checks for Raw, Bronze, and Silver layers
+├── spark_jobs/                 # PySpark transformations and performance benchmarking suite
+│   ├── bronze_transform.py     # Schema enforcement and Bronze Delta write
+│   ├── silver_transform.py     # Incremental MERGE, SHA-256 dedup, and post-commit watermarking
+│   └── spark_benchmark.py     # PySpark optimization benchmark (Z-Ordering & Broadcast joins)
+├── docker-compose.yml          # Full multi-container stack: MinIO, Spark, Airflow, Marquez, Metabase
+└── Makefile                    # Cross-platform task runner
+```
+
+---
+
+## ⚡ Quick Start & Local Setup
+
+### Prerequisites
+- **Docker & Docker Compose** (Allocated with ≥ 6GB RAM)
+- **Python 3.10+**
+- Kaggle API Key (`kaggle.json` or credentials in `.env`)
+
+### 1. Environment Initialization
+
+#### 🪟 Windows (PowerShell)
+```powershell
+# Copy environment template
+Copy-Item .env.exemple .env
+
+# Start Docker infrastructure (MinIO, Spark, Airflow, Postgres, Metabase)
+docker compose up -d
+
+# Create local Python virtual environment
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt (or dbt-duckdb soda-core-spark)
+
+# Initialize MinIO Buckets
+python scripts/create_buckets.py
+```
+
+#### 🐧 Linux / macOS (Bash)
+```bash
+# Copy environment template
+cp .env.exemple .env
+
+# Start Docker infrastructure
+docker compose up -d
+
+# Create local Python virtual environment
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Initialize MinIO Buckets
+python3 scripts/create_buckets.py
+```
+
+---
+
+## 🚀 Running the Full Pipeline
+
+### Option A: Complete Orchestration via Airflow
+Open the Airflow UI at [http://localhost:8080](http://localhost:8080) (Default credentials: `airflow` / `airflow`) and trigger the `ecommerce_lakehouse` DAG.
+> **Note:** The default pipeline executes against the curated `demo_sample` dataset to enable fast local end-to-end execution. Full historical backfills can be triggered via Airflow CLI.
+
+### Option B: Step-by-Step CLI Execution (via `Makefile`)
 
 ```bash
-# 1. Environment Setup & Docker Compose initialization
-make setup
-
-# 2. Run Data Contract Validation
+# 1. Run Data Contract Pre-Ingestion Gate
 make test-contracts
 
-# 3. Execute PySpark Medallion Transforms (Bronze & Silver MERGE)
+# 2. Ingest Raw Clickstream Data to MinIO
+python ingestion/kaggle_ingest.py
+
+# 3. Execute PySpark Bronze Transform (Schema Enforcement)
 make run-bronze
+
+# 4. Execute PySpark Silver Transform (Incremental MERGE & Dedup)
 make run-silver
 
-# 4. Execute dbt Dimensional Transformation & Test Suite (83 Data Tests)
+# 5. Execute dbt Dimensional Transformations & Full Test Suite (83 Tests)
 make run-dbt
 make test-dbt
 
-# 5. Run PySpark Optimization & Performance Benchmarks
+# 6. Run PySpark Delta Optimization & Benchmark Suite
 make run-benchmarks
 ```
 
 ---
 
-## 🎙️ 90-Second Senior Elevator Pitch
+## 🛡️ Reliability, Contracts & Crash-Recovery Matrix
 
-> *"I built a complete, production-ready Data Lakehouse for an e-commerce platform from the ground up. It implements a Medallion Architecture (Bronze, Silver, Gold) with PySpark and Delta Lake for scalable data processing, gated by an automated Soda Core quality framework between layers. I engineered a dimensional warehouse with dbt using DuckDB, incorporating complex business logic like 30-minute idle sessionization, Type 2 Slowly Changing Dimensions (SCD2), and cohort retention models. Shift-left YAML Data Contracts (`contract_cli.py`) enforce schema evolution and quarantine violating batches to S3 raw quarantine prefixes with Slack diff alerts. The entire 10-task pipeline is automated under Apache Airflow with crash-recovery retries and GitHub Actions CI/CD. It operates locally on a zero-budget stack (MinIO S3, Spark, DuckDB, Docker), matching the exact architectural patterns used by enterprise data teams."*
+### 1. Shift-Left YAML Data Contracts (`contract_cli.py`)
+Schema changes are evaluated prior to ingestion:
+- **`COMPATIBLE`** (e.g. adding nullable column): Batch passes and contract version updates.
+- **`WARNING`** (e.g. new optional column without default): Batch passes with operational alert.
+- **`BREAKING`** (e.g. column dropped, column renamed, data type change): Batch is quarantined to `s3a://raw/quarantine/` and Slack diff alert is dispatched.
+
+### 2. Failure-Injection Recovery Matrix
+The pipeline is verified against simulated crashes across all execution boundaries:
+
+| Injection Point | Injected Fault | Expected Behavior | Recovery Action | Verified Result |
+|---|---|---|---|---|
+| **`FAIL_AFTER_INGEST`** | Raw file write completes, worker kills before marker | Idempotent marker check finds incomplete upload | Re-run ingestion | Overwrites cleanly; zero corrupt files |
+| **`FAIL_AFTER_BRONZE`** | Bronze Delta write succeeds, Soda check aborted | Downstream Silver job halts via gate failure | Re-run Soda gate | Gate passes; Silver resumes |
+| **`FAIL_AFTER_MERGE`** | Silver `MERGE` commits, crash before watermark update | Watermark remains at prior timestamp | Re-run Silver transform | SHA-256 key deduplicates batch; **zero duplicate rows** |
+| **`FAIL_DURING_DBT`** | dbt model compilation fails mid-build | Staging views untouched; atomic table swap avoided | Re-run dbt | Target tables remain consistent |
 
 ---
 
-## 📚 Key Technical Documentation & References
+## 🔍 Metadata & Lineage Governance (OpenLineage + Marquez)
 
-- 📋 **[Demo & Execution Video Script](docs/DEMO_AND_RUNBOOK.md)** — Step-by-step instructions for filming a complete cold-start video demo.
-- 📖 **[Design Decisions Record](docs/design_decisions.md)** — Day-by-day technical log of architectural tradeoffs and decisions.
-- 📚 **[Data Catalog & Data Dictionary](docs/data_dictionary.md)** — Unified reference mapping schemas across Raw, Bronze, Silver, and Gold.
-- 🚀 **[Spark Performance Benchmarks](docs/performance_benchmarks.md)** — Case study report proving Z-Ordering and Broadcast Join speedups.
-- 📓 **[Mentor Implementation Workbook](docs/mentor_workbook/P01_ExecutionRoadmap_DailyMentorWorkbook.md)** — Detailed daily mentor workbook tracking the 9-week progression.
-
-
-
+The platform implements the **Linux Foundation OpenLineage Standard**:
+- **PySpark Listener (`OpenLineageSparkListener`):** Emits dataset inputs, outputs, Delta commit versions, and job duration metrics directly to Marquez.
+- **Airflow & dbt Transport:** Automatically captures dbt model DAG dependencies and singular test outcomes.
+- **Marquez UI:** Available at [http://localhost:3001](http://localhost:3001) for visual lineage inspection, dataset facet tracking, and incident blast-radius analysis.
 
 ---
 
-### **Option 2: Quick Test with a Small Data Subset**
+## ⚖️ Architectural Decisions & Tradeoffs
 
-If you want to actually test the flow without re-uploading everything:
+Detailed Architecture Decision Records are maintained in [`docs/adr/`](docs/adr/README.md):
 
-```powershell
-# 1. Create a tiny test dataset (10 rows)
-echo "event_time,event_type,product_id,category_id,category_code,brand,price,user_id,user_session" > ./data/test_small.csv
-echo "2019-10-01 00:00:00 UTC,view,1003461,2053013555631882655,electronics.smartphone,xiaomi,489.07,520088904,4d3b30da-a5e4-49df-b1a8-ba5943f1dd33" >> ./data/test_small.csv
-echo "2019-10-01 00:00:00 UTC,view,5000088,2053013566100866035,appliances.sewing_machine,janome,293.65,530496790,8e5f4f83-366c-4f70-860e-ca7417414283" >> ./data/test_small.csv
+- **[ADR-001: MinIO S3 & Delta Lake for Local Storage](docs/adr/ADR-001_minio_and_delta_lake_local_storage.md)** — Simulates cloud S3 API semantics and ACID transaction guarantees at zero infrastructure cost.
+- **[ADR-002: Hybrid Event-Time Watermarking & Lateness Buffer](docs/adr/ADR-002_hybrid_event_time_watermarking_and_lateness_buffer.md)** — Combines event-time partitioning with allowed lateness buffers and post-commit state advancement.
+- **[ADR-003: Deterministic SHA-256 Composite Keys](docs/adr/ADR-003_sha256_synthetic_event_keys.md)** — Enables deterministic deduplication across multi-engine boundaries.
+- **[ADR-004: dbt-on-DuckDB for Gold Layer](docs/adr/ADR-004_dbt_on_duckdb_for_gold_layer.md)** — Achieves sub-second analytical model compilation and 83 data tests directly against MinIO Delta tables.
+- **[ADR-005: Late Data & Partition Rebuild Strategy](docs/adr/ADR-005_late_data_and_partition_rebuild_strategy.md)** — Dynamic affected-partition detection for late events.
+- **[ADR-006: OpenLineage Standard & Marquez for Metadata Governance](docs/adr/ADR-006_openlineage_and_marquez_for_metadata_governance.md)** — Vendor-neutral metadata tracking across Spark, Airflow, and dbt.
 
-# 2. Upload it to MinIO
-# Using MinIO console: drag and drop to raw bucket
+---
 
-# 3. Run Bronze transform on this small file
-# Update your input path in bronze_transform.py or use --input-path
+## 📚 Technical Documentation
 
-# 4. Run Soda checks
+- 📖 **[ADR Index](docs/adr/README.md)** — Full technical decision records.
+- 🚀 **[Execution & Runbook Guide](docs/EXECUTION_AND_RUNBOOK_GUIDE.md)** — Complete step-by-step master guide for running the pipeline locally in Fast Demo Mode.
+- 📚 **[Data Catalog & Data Dictionary](docs/data_dictionary.md)** — Unified schema reference across Raw, Bronze, Silver, and Gold.
+- ⚡ **[Spark Performance Benchmarks](docs/performance_benchmarks.md)** — Benchmark report proving 3.0x speedups via Z-Ordering and Broadcast Joins.
+- 📋 **[Demo Script & Runbook](docs/DEMO_AND_RUNBOOK.md)** — Cold-start execution instructions and video walkthrough guide.
 
+---
 
-### ✅ Phase 4 Complete (Days 19-21)
-- [x] Raw-layer existence and freshness quality checks
-- [x] Unified Quality Gate Runner (`checks/run_quality_gate.py`)
-- [x] Multi-suite result aggregation (Raw, Bronze, Silver) with zero failure masking
-- [x] Audit-ready JSON reporting and pass/fail exit code signal
+## 🏆 Resume Summary Bullets
 
-### ✅ Phase 5 Staging & Sessionization Complete (Days 22-28 / Week 4)
-- [x] dbt project setup with `dbt-duckdb` adapter querying Silver Delta tables via MinIO S3 (`delta` + `httpfs` extensions)
-- [x] Source declaration with freshness checks (`silver.ecommerce_events`)
-- [x] `stg_events` 1:1 view staging model with standardized schema
-- [x] `stg_products` derived reference table deduplicating product metadata per `product_id`
-- [x] `int_sessions` 30-minute windowed sessionization model with deterministic `session_id` (`user_id` + `session_seq`)
-- [x] `int_events_enriched` joining events, session context, and product attributes
-- [x] 21 automated dbt tests (generic `not_null`, `unique`, `accepted_values` + singular rules: `assert_no_session_gaps_exceed_30_min` & `assert_enriched_events_preserve_row_count`)
-
-## 🏷️ Tags
-- `v0.1-phase0-complete`: Docker stack + MinIO connectivity
-- `v0.2-phase1-complete`: Ingestion service working
-- `v0.3-phase2-complete`: Bronze Delta layer + Quality gates
-- `v0.4-phase3-complete`: Incremental Silver MERGE + Crash safety
-- `v0.5-phase4-complete`: Unified 3-Layer Soda Quality Gate
-- `v0.6-phase5-staging-complete`: dbt Staging & Sessionization Layer + 21 dbt tests
-
-## 🔒 Reliability
-
-### Crash-Safety & Data Modeling Guarantees
-
-1. **Spark/Silver Layer:** The Silver incremental pipeline is proven crash-safe at its most critical boundary (MERGE vs. watermark update).
-2. **dbt Modeling Layer:** Row-count preservation between staging and enriched intermediate models is enforced by automated singular tests. Session gaps strictly > 30 minutes trigger new sessions, validated via custom dbt assertions.
-
-## 🏗️ Architecture (Current State)
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           DATA LAKEHOUSE                                │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│ ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────────────────┐ │
-│ │   Raw    │  │  Bronze  │  │  Silver  │  │ dbt Staging & Intermediate│ │
-│ │  (CSV)   │─▶│ (Delta)  │─▶│ (Delta)  │─▶│   (DuckDB/Delta Scan)     │ │
-│ └──────────┘  └──────────┘  └──────────┘  └───────────────────────────┘ │
-│      │             │             │                      │               │
-│      ▼             ▼             ▼                      ▼               │
-│ ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────────────────────┐ │
-│ │Ingestion │  │ Quality  │  │ Quality  │  │   21 dbt Generic &        │ │
-│ │ (Kaggle) │  │  Gate    │  │  Gate    │  │   Singular Data Tests     │ │
-│ └──────────┘  │  (Soda)  │  │  (Soda)  │  └───────────────────────────┘ │
-│               └──────────┘  └──────────┘                                │
-│                                                                         │
-│ ✅ Phase 0-1  ✅ Phase 2    ✅ Phase 3-4  ✅ Phase 5 (Week 4)           │
-│               (Bronze)      (Silver &     (stg_events, stg_products,    │
-│                             Quality Gate)  int_sessions, int_enriched)    │
-└─────────────────────────────────────────────────────────────────────────┘
-
-
-## 🚀 Running the Full Pipeline
-
-### Full Chain (Ingestion → Bronze → Quality → Silver → Quality)
-
-```bash
-# 1. Start the stack
-docker compose up -d
-
-# 2. Create buckets
-python scripts/create_buckets.py
-
-# 3. Run ingestion
-python ingestion/kaggle_ingest.py
-
-# 4. Run Bronze transform
-docker compose exec spark /opt/spark/bin/spark-submit \
-  --jars /opt/spark/jars-extra/*.jar \
-  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  spark_jobs/bronze_transform.py
-
-# 5. Run Bronze Soda checks
-docker compose exec spark bash -lc "cd /opt/spark/work-dir && python3 soda/run_soda_scan.py s3a://bronze/ecommerce_events/ soda/checks/bronze_checks.yml soda/configurations/spark_configuration.yml"
-
-# 6. Run Silver transform
-docker compose exec spark /opt/spark/bin/spark-submit \
-  --jars /opt/spark/jars-extra/*.jar \
-  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  spark_jobs/silver_transform.py
-
-# 7. Run Silver Soda checks
-docker compose exec spark python3 soda/run_silver_scan.py
-
-
-Crash-Safety Test (Optional)
-bash
-# Run with crash simulation
-docker compose exec spark bash -c "SIMULATE_CRASH_AFTER_MERGE=true /opt/spark/bin/spark-submit --jars /opt/spark/jars-extra/*.jar --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog spark_jobs/silver_transform.py"
-
-# Run recovery
-docker compose exec spark /opt/spark/bin/spark-submit \
-  --jars /opt/spark/jars-extra/*.jar \
-  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-  --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  spark_jobs/silver_transform.py
-
-
-## Why This Project
-
-This is a production-patterned data lakehouse implementation built around six specific engineering decisions:
-
-1. **Incremental, crash-safe Silver processing** — The pipeline uses Delta Lake's `MERGE` with a SHA-256 deduplication key and a watermark that only advances after a successful write. I deliberately simulated a crash at the most critical boundary (after MERGE, before watermark) and proved recovery causes zero data loss and zero duplication.
-
-2. **Layer-appropriate data quality** — Raw, Bronze, and Silver each have different quality checks, not repeated ones. Raw checks existence and freshness (before schema enforcement). Bronze checks schema and nulls (after enforcement). Silver checks deduplication and business rule outcomes (after processing). This "shift left" design catches problems earlier and at the right stage.
-
-3. **Unified, Airflow-ready interface** — A single `run_quality_gate.py` command runs all three check suites, aggregates results without masking early failures, and exits with a clear pass/fail signal. This is the exact interface orchestration tools expect.
-
-4. **Gold-layer marts designed for real business questions** — Each Gold mart answers a specific, statable business question (daily executive KPIs, cohort retention, category revenue growth). `mart_daily_summary` is incremental with a `delete+insert` strategy. `mart_customer_retention` enforces two domain invariants as singular tests: month-0 retention must be 100%, and retained counts must never exceed cohort size. `mart_category_performance` uses explicit LAG-based period-over-period growth with labelled zero-division handling. All three are declared as dbt Exposures, making their downstream consumers part of the lineage graph.
-
-5. **Production Orchestration & Self-Healing** — The full 10-step pipeline runs under Apache Airflow with explicit quality-gate halting semantics, automatic crash-recovery retry composition, dual failure alerting (Slack + email), and native CLI backfill support.
-
-6. **Enterprise Data Governance & Spark Performance Engineering** — Shift-left YAML Data Contracts (`contract_cli.py`) quarantine violating raw batches to `s3a://raw/quarantine/` with Slack diff alerts. The PySpark Benchmarking Suite (`spark_benchmark.py`) empirically proves ~3.0x speedup via Delta Z-Ordering and ~3.2x speedup via Broadcast Joins.
-
-Each of these decisions is documented, tested, and verifiable — not just claimed.
+- *Architected a production-patterned e-commerce Data Lakehouse utilizing PySpark, Delta Lake, MinIO, and dbt on DuckDB under Apache Airflow orchestration.*
+- *Implemented crash-safe incremental ingestion with SHA-256 deterministic deduplication and post-commit watermarking, validated via automated failure-injection matrices.*
+- *Engineered a YAML Data Contract engine with breaking-schema classification, automated dead-letter quarantine routing, and Slack diff alerting.*
+- *Integrated the OpenLineage standard with Marquez to capture end-to-end operational metadata, dataset facets, and schema evolution across Spark and dbt.*
+- *Authored a suite of 83 dbt tests covering SCD Type 2 dimensions, 30-minute idle sessionization, and cohort retention invariants.*
