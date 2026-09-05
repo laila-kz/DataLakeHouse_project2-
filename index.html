@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Data Lakehouse Lineage &mdash; E-Commerce Medallion Architecture</title>
+  <meta name="description" content="2D DAG lineage: Source to Bronze to Silver to Gold to BI"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#07090f; --surface:rgba(10,14,26,0.94); --border:rgba(255,255,255,0.07);
+      --text:#dde4f0; --muted:#4e5e76; --accent:#38bdf8;
+      --hdr:54px; --sb:258px;
+      --c-src:#f97316; --c-land:#facc15; --c-orch:#38bdf8;
+      --c-brnz:#cd7f32; --c-qual:#4ade80; --c-silv:#9ab0c8;
+      --c-gold:#ffd700; --c-bi:#a78bfa;
+    }
+    html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+      font-family:Inter,sans-serif;color:var(--text);}
+
+    /* ====== HEADER ====================================================== */
+    #hdr{
+      position:fixed;top:0;left:0;right:0;height:var(--hdr);z-index:200;
+      background:rgba(7,9,15,0.97);border-bottom:1px solid var(--border);
+      backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+      display:flex;align-items:center;padding:0 16px;gap:14px;
+    }
+    .hdr-brand{display:flex;align-items:center;gap:9px;flex-shrink:0}
+    .live-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);
+      box-shadow:0 0 8px var(--accent);animation:blink 2.2s ease-in-out infinite}
+    @keyframes blink{0%,100%{opacity:1;box-shadow:0 0 7px var(--accent)}
+                     50%{opacity:.45;box-shadow:0 0 18px var(--accent)}}
+    .brand-name{font-size:14px;font-weight:700;white-space:nowrap}
+    .brand-sub{font-size:10.5px;color:var(--muted);margin-top:1px;white-space:nowrap}
+    .vsep{width:1px;height:26px;background:var(--border);flex-shrink:0}
+
+    /* Pipeline ribbon */
+    #ribbon{display:flex;align-items:center;gap:0;flex:1;overflow:hidden}
+    .rp{display:flex;align-items:center;gap:5px;padding:5px 9px;
+       border-radius:6px;font-size:11px;font-weight:600;letter-spacing:.04em;
+       white-space:nowrap;cursor:pointer;border:1px solid transparent;
+       transition:background .2s,border-color .2s}
+    .rp:hover{background:rgba(255,255,255,0.05)}
+    .rp.active{background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1)}
+    .rp-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;box-shadow:0 0 5px currentColor}
+    .rarr{font-size:11px;color:var(--muted);padding:0 1px;flex-shrink:0}
+
+    /* Right controls */
+    .hdr-right{display:flex;align-items:center;gap:8px;flex-shrink:0;margin-left:auto}
+    .modeBtn{
+      display:flex;align-items:center;gap:5px;
+      background:rgba(255,255,255,0.04);border:1px solid var(--border);
+      border-radius:7px;padding:5px 12px;font-size:11.5px;font-weight:500;
+      color:var(--muted);cursor:pointer;transition:all .2s;font-family:Inter,sans-serif;
+    }
+    .modeBtn.on{background:rgba(56,189,248,0.11);border-color:rgba(56,189,248,.28);color:var(--accent)}
+    .modeBtn:hover:not(.on){color:var(--text);border-color:rgba(255,255,255,.14)}
+    .iconBtn{
+      background:rgba(255,255,255,0.04);border:1px solid var(--border);
+      border-radius:7px;padding:5px 10px;font-size:14px;cursor:pointer;
+      transition:background .2s;color:var(--text);font-family:Inter,sans-serif;
+    }
+    .iconBtn:hover{background:rgba(255,255,255,0.09)}
+
+    /* ====== SIDEBAR ===================================================== */
+    #sb{
+      position:fixed;top:var(--hdr);left:0;bottom:0;width:var(--sb);z-index:100;
+      background:rgba(7,9,15,0.98);border-right:1px solid var(--border);
+      transform:translateX(0);transition:transform .28s cubic-bezier(.4,0,.2,1);
+      overflow-y:auto;display:flex;flex-direction:column;
+    }
+    #sb.gone{transform:translateX(calc(-1 * var(--sb)))}
+    .sb-sec{padding:14px 16px;border-bottom:1px solid var(--border)}
+    .sb-lbl{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+      color:var(--muted);margin-bottom:10px}
+
+    .leg{display:flex;align-items:flex-start;gap:9px;padding:6px 6px;
+         border-radius:7px;cursor:pointer;transition:background .15s}
+    .leg:hover{background:rgba(255,255,255,0.04)}
+    .leg.dim{opacity:.28}
+    .leg-sw{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:3px}
+    .leg-name{font-size:12px;font-weight:600;line-height:1.2}
+    .leg-desc{font-size:10.5px;color:var(--muted);line-height:1.35;margin-top:1px}
+
+    .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .stat-box{background:rgba(255,255,255,0.03);border:1px solid var(--border);
+      border-radius:8px;padding:10px;text-align:center}
+    .stat-n{font-size:21px;font-weight:700;font-family:'JetBrains Mono',monospace;
+      color:var(--accent);line-height:1}
+    .stat-ok{color:#4ade80}
+    .stat-l{font-size:9px;color:var(--muted);text-transform:uppercase;
+      letter-spacing:.05em;margin-top:3px}
+
+    .ctrl{display:flex;align-items:center;gap:8px;padding:3px 0;
+          font-size:11px;color:var(--muted)}
+    kbd{background:rgba(255,255,255,0.07);border:1px solid var(--border);
+      border-radius:4px;padding:1px 7px;font-size:10px;
+      font-family:'JetBrains Mono',monospace;color:var(--text)}
+
+    /* ====== GRAPH AREA ================================================== */
+    #gc{
+      position:fixed;top:var(--hdr);left:var(--sb);right:0;bottom:0;
+      transition:left .28s cubic-bezier(.4,0,.2,1);
+    }
+    #gc.full{left:0}
+
+    /* ====== TOOLTIP ===================================================== */
+    #tip{
+      position:fixed;z-index:500;pointer-events:none;
+      background:rgba(7,9,15,0.98);border:1px solid rgba(56,189,248,.22);
+      border-radius:10px;padding:11px 14px;max-width:265px;
+      font-size:12.5px;line-height:1.65;
+      box-shadow:0 8px 32px rgba(0,0,0,.75),0 0 0 1px rgba(56,189,248,.04);
+      opacity:0;transform:translateY(5px);transition:opacity .15s,transform .15s;
+    }
+    #tip.show{opacity:1;transform:translateY(0)}
+
+    /* ====== ORBIT BUTTON ================================================ */
+    #orbitBtn{
+      position:fixed;bottom:16px;right:16px;z-index:150;
+      background:rgba(10,14,26,0.92);border:1px solid var(--border);
+      border-radius:8px;padding:7px 14px;font-size:11.5px;
+      color:var(--accent);cursor:pointer;font-family:Inter,sans-serif;font-weight:500;
+      display:none;transition:background .2s;
+    }
+    #orbitBtn:hover{background:rgba(56,189,248,.1)}
+    #orbitBtn.paused{color:var(--muted)}
+  </style>
+</head>
+<body>
+
+<!-- ===== HEADER ========================================================= -->
+<header id="hdr">
+  <div class="hdr-brand">
+    <div class="live-dot"></div>
+    <div>
+      <div class="brand-name">Lakehouse Lineage</div>
+      <div class="brand-sub">E-Commerce Medallion Architecture</div>
+    </div>
+  </div>
+  <div class="vsep"></div>
+
+  <nav id="ribbon">
+    <div class="rp" style="color:var(--c-src)"  data-layer="source">
+      <div class="rp-dot" style="background:var(--c-src);color:var(--c-src)"></div>Raw CSV
+    </div><div class="rarr">&#8594;</div>
+    <div class="rp" style="color:var(--c-brnz)" data-layer="bronze">
+      <div class="rp-dot" style="background:var(--c-brnz);color:var(--c-brnz)"></div>Bronze
+    </div><div class="rarr">&#8594;</div>
+    <div class="rp" style="color:var(--c-silv)" data-layer="silver">
+      <div class="rp-dot" style="background:var(--c-silv);color:var(--c-silv)"></div>Silver
+    </div><div class="rarr">&#8594;</div>
+    <div class="rp" style="color:var(--c-gold)" data-layer="gold">
+      <div class="rp-dot" style="background:var(--c-gold);color:var(--c-gold)"></div>Gold / dbt
+    </div><div class="rarr">&#8594;</div>
+    <div class="rp" style="color:var(--c-bi)"   data-layer="bi">
+      <div class="rp-dot" style="background:var(--c-bi);color:var(--c-bi)"></div>BI
+    </div>
+  </nav>
+
+  <div class="hdr-right">
+    <button class="modeBtn on"  id="btn2d">&#9633;&nbsp; 2D DAG</button>
+    <button class="modeBtn"     id="btn3d">&#9671;&nbsp; 3D Graph</button>
+    <div class="vsep"></div>
+    <button class="iconBtn" id="sbToggle" title="Toggle sidebar">&#9776;</button>
+  </div>
+</header>
+
+<!-- ===== SIDEBAR ======================================================== -->
+<aside id="sb">
+
+  <div class="sb-sec">
+    <div class="sb-lbl">Architecture Layers</div>
+    <div class="leg" data-filter="source">
+      <div class="leg-sw" style="background:var(--c-src);box-shadow:0 0 5px var(--c-src)"></div>
+      <div><div class="leg-name" style="color:var(--c-src)">SOURCE</div>
+        <div class="leg-desc">Kaggle CSV &mdash; 4M click events</div></div>
+    </div>
+    <div class="leg" data-filter="landing">
+      <div class="leg-sw" style="background:var(--c-land);box-shadow:0 0 5px var(--c-land)"></div>
+      <div><div class="leg-name" style="color:var(--c-land)">LANDING</div>
+        <div class="leg-desc">MinIO raw/ &mdash; Parquet by date</div></div>
+    </div>
+    <div class="leg" data-filter="bronze">
+      <div class="leg-sw" style="background:var(--c-brnz);box-shadow:0 0 5px var(--c-brnz)"></div>
+      <div><div class="leg-name" style="color:var(--c-brnz)">BRONZE</div>
+        <div class="leg-desc">PySpark Delta &mdash; raw ingestion</div></div>
+    </div>
+    <div class="leg" data-filter="quality">
+      <div class="leg-sw" style="background:var(--c-qual);box-shadow:0 0 5px var(--c-qual)"></div>
+      <div><div class="leg-name" style="color:var(--c-qual)">SODA GATES</div>
+        <div class="leg-desc">11+ checks &mdash; hard pipeline block</div></div>
+    </div>
+    <div class="leg" data-filter="silver">
+      <div class="leg-sw" style="background:var(--c-silv);box-shadow:0 0 5px var(--c-silv)"></div>
+      <div><div class="leg-name" style="color:var(--c-silv)">SILVER</div>
+        <div class="leg-desc">Delta MERGE &mdash; SHA-256 dedup</div></div>
+    </div>
+    <div class="leg" data-filter="gold">
+      <div class="leg-sw" style="background:var(--c-gold);box-shadow:0 0 5px var(--c-gold)"></div>
+      <div><div class="leg-name" style="color:var(--c-gold)">GOLD</div>
+        <div class="leg-desc">dbt / DuckDB &mdash; dims, facts, marts</div></div>
+    </div>
+    <div class="leg" data-filter="bi">
+      <div class="leg-sw" style="background:var(--c-bi);box-shadow:0 0 5px var(--c-bi)"></div>
+      <div><div class="leg-name" style="color:var(--c-bi)">BI</div>
+        <div class="leg-desc">Metabase &mdash; 3 exec. dashboards</div></div>
+    </div>
+    <div class="leg" data-filter="orchestration">
+      <div class="leg-sw" style="background:var(--c-orch);box-shadow:0 0 5px var(--c-orch)"></div>
+      <div><div class="leg-name" style="color:var(--c-orch)">AIRFLOW</div>
+        <div class="leg-desc">@daily schedule &mdash; BashOperator</div></div>
+    </div>
+  </div>
+
+  <div class="sb-sec">
+    <div class="sb-lbl">Pipeline Stats</div>
+    <div class="stat-grid">
+      <div class="stat-box"><div class="stat-n" id="sNodes">&mdash;</div><div class="stat-l">Nodes</div></div>
+      <div class="stat-box"><div class="stat-n" id="sEdges">&mdash;</div><div class="stat-l">Edges</div></div>
+      <div class="stat-box"><div class="stat-n">83</div><div class="stat-l">dbt Tests</div></div>
+      <div class="stat-box"><div class="stat-n stat-ok">&#10003;</div><div class="stat-l">All Pass</div></div>
+    </div>
+  </div>
+
+  <div class="sb-sec">
+    <div class="sb-lbl">Controls</div>
+    <div class="ctrl"><kbd>Hover</kbd> Highlight lineage path</div>
+    <div class="ctrl"><kbd>Click</kbd> Focus &amp; zoom to node</div>
+    <div class="ctrl"><kbd>Scroll</kbd> Zoom in / out</div>
+    <div class="ctrl"><kbd>Drag</kbd> Pan canvas</div>
+    <div class="ctrl" id="ctrl3d" style="display:none"><kbd>Alt+Drag</kbd> Orbit in 3D</div>
+  </div>
+
+</aside>
+
+<!-- ===== GRAPH AREA ===================================================== -->
+<div id="gc"></div>
+<div id="tip"></div>
+<button id="orbitBtn">&#8635;&nbsp; Auto-Orbit: ON</button>
+
+<!-- ===== SCRIPTS ======================================================== -->
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/force-graph@1.43.5/dist/force-graph.min.js"></script>
+<script src="https://unpkg.com/3d-force-graph@1.73.4/dist/3d-force-graph.min.js"></script>
+<script>
+/* ================================================================
+   E-Commerce Lakehouse  |  2D DAG (default) + 3D toggle
+   Key features:
+   - 2D default: pinned layer columns, swimlanes, canvas labels
+   - Hover: dims non-connected nodes/links to 6% opacity
+   - Layer filter: click legend item or ribbon step
+   - 3D: extremely slow orbit (0.0003 rad/frame)
+   ================================================================ */
+(async () => {
+
+  /* ---------- load data ---------------------------------------- */
+  let G;
+  try {
+    const r = await fetch('./graph_data.json');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    G = await r.json();
+  } catch(e) {
+    document.getElementById('gc').innerHTML =
+      '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+      'color:#f97316;text-align:center;font-size:15px">' +
+      '<div style="font-size:36px;margin-bottom:12px">&#9888;</div>' +
+      '<b>graph_data.json not found</b><br/>' +
+      '<span style="color:#4e5e76;font-size:12px">Run: python scripts/generate_graph.py</span></div>';
+    return;
+  }
+
+  document.getElementById('sNodes').textContent = G.meta.node_count;
+  document.getElementById('sEdges').textContent = G.meta.link_count;
+
+  /* ---------- layer config ------------------------------------- */
+  const LAYER_ORDER = ['source','landing','orchestration','bronze','quality','silver','gold','bi'];
+
+  const LAYER_X = {
+    source: -680, landing: -490, orchestration: -305,
+    bronze: -145, quality: -20, silver: 125, gold: 355, bi: 605,
+  };
+
+  const LAYER_COL = {
+    source:'#f97316', landing:'#facc15', orchestration:'#38bdf8',
+    bronze:'#cd7f32', quality:'#4ade80', silver:'#9ab0c8',
+    gold:'#ffd700', bi:'#a78bfa',
+  };
+
+  const LAYER_LBL = {
+    source:'SOURCE', landing:'LANDING', orchestration:'AIRFLOW',
+    bronze:'BRONZE', quality:'SODA', silver:'SILVER',
+    gold:'GOLD / dbt', bi:'BI',
+  };
+
+  /* ---------- adjacency for hover highlighting ----------------- */
+  const nodeById = Object.fromEntries(G.nodes.map(n => [n.id, n]));
+  const adj = {};            // nodeId -> Set<nodeId>  (neighbours)
+  const adjLink = {};        // nodeId -> Set<linkIndex>
+  G.nodes.forEach(n => { adj[n.id] = new Set(); adjLink[n.id] = new Set(); });
+  G.links.forEach((l, i) => {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    if (adj[s]) { adj[s].add(t); adjLink[s].add(i); }
+    if (adj[t]) { adj[t].add(s); adjLink[t].add(i); }
+  });
+
+  /* ---------- state ------------------------------------------- */
+  let mode = '2d';
+  let hovId = null;
+  let filterLayer = null;
+  let G2 = null, G3 = null;
+  let orbitOn = true, orbitRAF = null, orbitAngle = Math.PI * 0.55;
+  const tip = document.getElementById('tip');
+  const gc  = document.getElementById('gc');
+  const sb  = document.getElementById('sb');
+  let sbOpen = true;
+
+  /* ---------- sidebar toggle ---------------------------------- */
+  document.getElementById('sbToggle').onclick = () => {
+    sbOpen = !sbOpen;
+    sb.classList.toggle('gone', !sbOpen);
+    gc.classList.toggle('full', !sbOpen);
+    setTimeout(() => {
+      if (G2) G2.width(gc.clientWidth).height(gc.clientHeight);
+      if (G3) G3.width(gc.clientWidth).height(gc.clientHeight);
+    }, 300);
+  };
+
+  /* ---------- sidebar legend filter --------------------------- */
+  document.querySelectorAll('.leg[data-filter]').forEach(el => {
+    el.addEventListener('click', () => {
+      const lyr = el.dataset.filter;
+      filterLayer = filterLayer === lyr ? null : lyr;
+      document.querySelectorAll('.leg').forEach(e =>
+        e.classList.toggle('dim', !!filterLayer && e.dataset.filter !== filterLayer)
+      );
+      hovId = null;
+      repaint2D();
+    });
+  });
+
+  /* ---------- ribbon filter ----------------------------------- */
+  document.querySelectorAll('.rp[data-layer]').forEach(el => {
+    el.addEventListener('click', () => {
+      const lyr = el.dataset.layer;
+      filterLayer = filterLayer === lyr ? null : lyr;
+      document.querySelectorAll('.rp').forEach(e =>
+        e.classList.toggle('active', !!filterLayer && e.dataset.layer === filterLayer)
+      );
+      hovId = null;
+      repaint2D();
+    });
+  });
+
+  /* ---------- focus helpers ----------------------------------- */
+  function nodeInFocus(node) {
+    if (filterLayer && node.layer !== filterLayer) return false;
+    if (!hovId) return true;
+    return node.id === hovId || (adj[hovId] && adj[hovId].has(node.id));
+  }
+  function linkInFocus(link, i) {
+    if (filterLayer) {
+      const s = typeof link.source === 'object' ? link.source : nodeById[link.source];
+      const t = typeof link.target === 'object' ? link.target : nodeById[link.target];
+      return s && t && (s.layer === filterLayer || t.layer === filterLayer);
+    }
+    if (!hovId) return true;
+    return adjLink[hovId] && adjLink[hovId].has(i);
+  }
+
+  /* ---------- force repaint for 2D (updates particles) -------- */
+  function repaint2D() {
+    if (!G2) return;
+    G2.linkDirectionalParticles(G2.linkDirectionalParticles());
+  }
+
+  /* ============================================================
+     2D GRAPH
+     ============================================================ */
+  function init2D() {
+    if (G3) { gc.innerHTML = ''; G3 = null; }
+    document.getElementById('orbitBtn').style.display = 'none';
+    document.getElementById('ctrl3d').style.display = 'none';
+
+    /* Pin nodes: X fixed by layer, Y spread within layer */
+    const byLayer = {};
+    LAYER_ORDER.forEach(l => byLayer[l] = []);
+    G.nodes.forEach(n => { if (byLayer[n.layer]) byLayer[n.layer].push(n); });
+    const VSPAN = 440;
+    G.nodes.forEach(n => {
+      n.fx = LAYER_X[n.layer] ?? 0;
+      const peers = byLayer[n.layer] || [n];
+      const idx   = peers.indexOf(n);
+      n.fy = peers.length > 1 ? -VSPAN/2 + idx * (VSPAN / (peers.length - 1)) : 0;
+    });
+
+    G2 = ForceGraph()(gc)
+      .width(gc.clientWidth).height(gc.clientHeight)
+      .backgroundColor('#07090f')
+      .graphData({ nodes: G.nodes, links: G.links })
+      .d3AlphaDecay(1).d3VelocityDecay(1)   // positions are already fixed
+      .enableNodeDrag(false)
+      .showNavInfo(false)
+      .nodeLabel(() => '')
+      .linkLabel(() => '')
+
+      /* -- swimlanes drawn each frame BEFORE nodes ------------- */
+      .onRenderFramePre(ctx => {
+        const H = gc.clientHeight;
+        LAYER_ORDER.forEach((layer, i) => {
+          const lx  = LAYER_X[layer] ?? 0;
+          const plx = i > 0 ? LAYER_X[LAYER_ORDER[i-1]] : lx - 110;
+          const nlx = i < LAYER_ORDER.length-1 ? LAYER_X[LAYER_ORDER[i+1]] : lx + 110;
+          const sl  = G2.graph2ScreenCoords(((lx + plx) / 2), 0).x;
+          const sr  = G2.graph2ScreenCoords(((lx + nlx) / 2), 0).x;
+          const col = LAYER_COL[layer] || '#888';
+          const dim = filterLayer && filterLayer !== layer;
+
+          /* background fill */
+          ctx.save();
+          ctx.globalAlpha = dim ? 0.012 : 0.05;
+          ctx.fillStyle = col;
+          ctx.fillRect(sl, 0, sr - sl, H);
+          ctx.restore();
+
+          /* left border */
+          ctx.save();
+          ctx.globalAlpha = dim ? 0.04 : 0.14;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath(); ctx.moveTo(sl, 30); ctx.lineTo(sl, H); ctx.stroke();
+          ctx.restore();
+
+          /* layer label at top */
+          const cx = (sl + sr) / 2;
+          ctx.save();
+          ctx.globalAlpha = dim ? 0.18 : 0.9;
+          ctx.fillStyle = col;
+          ctx.font = 'bold 10px Inter,sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(LAYER_LBL[layer] || layer.toUpperCase(), cx, 19);
+          ctx.restore();
+        });
+      })
+
+      /* -- custom node canvas rendering ------------------------ */
+      .nodeCanvasObject((node, ctx, gs) => {
+        const focused = nodeInFocus(node);
+        const alpha   = focused ? 1 : 0.06;
+        const col     = node.color || '#38bdf8';
+        const R       = (node.val || 6) * 1.5;
+        const x = node.x, y = node.y;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        /* glow halo */
+        if (focused) {
+          const g = ctx.createRadialGradient(x, y, R * 0.5, x, y, R * 2.6);
+          g.addColorStop(0, col + '44');
+          g.addColorStop(1, col + '00');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(x, y, R * 2.6, 0, Math.PI * 2); ctx.fill();
+        }
+
+        /* main sphere */
+        ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2);
+        ctx.fillStyle = col;
+        ctx.fill();
+
+        /* specular highlight */
+        ctx.beginPath(); ctx.arc(x - R * 0.28, y - R * 0.28, R * 0.36, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.30)';
+        ctx.fill();
+
+        /* label — shown when zoomed in enough */
+        if (gs > 0.5) {
+          const fs   = Math.max(8.5, Math.min(12, 10 / gs));
+          const lbl  = node.name;
+          ctx.font = 'bold ' + fs + 'px Inter,sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          /* pill background */
+          const tw = ctx.measureText(lbl).width;
+          const lx = x - tw/2 - 5, ly = y + R + 5;
+          ctx.globalAlpha = alpha * 0.82;
+          ctx.fillStyle = 'rgba(7,9,15,0.88)';
+          ctx.beginPath();
+          ctx.roundRect ? ctx.roundRect(lx, ly, tw+10, fs+6, (fs+6)/2)
+                        : ctx.rect(lx, ly, tw+10, fs+6);
+          ctx.fill();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = focused ? col : '#6b7a92';
+          ctx.fillText(lbl, x, ly + 3);
+        }
+
+        ctx.restore();
+      })
+      .nodeCanvasObjectMode(() => 'replace')
+
+      /* -- custom link canvas rendering ------------------------ */
+      .linkCanvasObjectMode(() => 'replace')
+      .linkCanvasObject((link, ctx) => {
+        const i = G.links.indexOf(link);
+        const focused = linkInFocus(link, i);
+        const col     = link.particle_color || '#38bdf8';
+        const s = typeof link.source === 'object' ? link.source : nodeById[link.source];
+        const t = typeof link.target === 'object' ? link.target : nodeById[link.target];
+        if (!s || !t) return;
+
+        ctx.save();
+        ctx.globalAlpha = focused ? 0.6 : 0.04;
+        ctx.strokeStyle = col;
+        ctx.lineWidth   = focused ? 1.6 : 0.8;
+        if (!focused) ctx.setLineDash([3, 5]);
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+
+        /* directional arrow */
+        if (focused) {
+          const ang = Math.atan2(t.y - s.y, t.x - s.x);
+          const tR  = (t.val || 6) * 1.5;
+          const ax  = t.x - Math.cos(ang) * (tR + 3);
+          const ay  = t.y - Math.sin(ang) * (tR + 3);
+          const AL  = 8;
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(ax - AL * Math.cos(ang - 0.45), ay - AL * Math.sin(ang - 0.45));
+          ctx.lineTo(ax - AL * Math.cos(ang + 0.45), ay - AL * Math.sin(ang + 0.45));
+          ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+      })
+
+      /* -- animated particles on focused links only ------------ */
+      .linkDirectionalParticles(l => {
+        const i = G.links.indexOf(l);
+        return linkInFocus(l, i) ? 3 : 0;
+      })
+      .linkDirectionalParticleSpeed(l => l.particle_speed || 0.0045)
+      .linkDirectionalParticleWidth(l => (l.particle_width || 2) * 1.3)
+      .linkDirectionalParticleColor(l => l.particle_color || '#38bdf8')
+
+      /* -- hover ------------------------------------------------ */
+      .onNodeHover(node => {
+        hovId = node ? node.id : null;
+        document.body.style.cursor = node ? 'pointer' : 'default';
+        if (node) {
+          tip.innerHTML = node.tooltip || '<b>' + node.name + '</b>';
+          tip.classList.add('show');
+        } else {
+          setTimeout(() => tip.classList.remove('show'), 160);
+        }
+        repaint2D();
+      })
+
+      /* -- click: zoom to node --------------------------------- */
+      .onNodeClick(node => {
+        G2.centerAt(node.x, node.y, 500);
+        G2.zoom(2.8, 500);
+        hovId = node.id;
+        tip.innerHTML = node.tooltip || '<b>' + node.name + '</b>';
+        tip.classList.add('show');
+        repaint2D();
+      })
+
+      /* -- background click: reset ----------------------------- */
+      .onBackgroundClick(() => {
+        G2.zoom(1, 400); G2.centerAt(0, 0, 400);
+        hovId = null; filterLayer = null;
+        tip.classList.remove('show');
+        document.querySelectorAll('.leg').forEach(e => e.classList.remove('dim'));
+        document.querySelectorAll('.rp').forEach(e => e.classList.remove('active'));
+        repaint2D();
+      });
+
+    setTimeout(() => G2.zoomToFit(400, 52), 350);
+  }
+
+  /* ============================================================
+     3D GRAPH
+     ============================================================ */
+  function init3D() {
+    if (G2) { gc.innerHTML = ''; G2 = null; }
+    document.getElementById('orbitBtn').style.display = 'block';
+    document.getElementById('ctrl3d').style.display = '';
+
+    /* Free Y/Z in 3D, but keep X layer lanes */
+    G.nodes.forEach(n => { delete n.fy; n.fx = LAYER_X[n.layer] ?? 0; });
+
+    G3 = ForceGraph3D({ antialias: true })(gc)
+      .width(gc.clientWidth).height(gc.clientHeight)
+      .backgroundColor('#07090f')
+      .graphData({ nodes: G.nodes, links: G.links })
+      .showNavInfo(false)
+      .enableNodeDrag(false)
+      .nodeLabel(() => '')
+
+      .nodeThreeObject(node => {
+        const hex = parseInt((node.color || '#38bdf8').replace('#', ''), 16);
+        const R   = (node.val || 6) * 1.7;
+        const grp = new THREE.Group();
+
+        /* sphere */
+        grp.add(new THREE.Mesh(
+          new THREE.SphereGeometry(R, 20, 20),
+          new THREE.MeshPhongMaterial({
+            color: hex, emissive: hex, emissiveIntensity: 0.45,
+            shininess: 80, transparent: true, opacity: 0.9,
+          })
+        ));
+
+        /* canvas label */
+        const cv  = document.createElement('canvas');
+        const cx2 = cv.getContext('2d');
+        const FS  = 26;
+        cx2.font = 'bold ' + FS + 'px Inter,sans-serif';
+        const tw  = cx2.measureText(node.name).width;
+        const PD = 12, CH = FS + 12;
+        cv.width = tw + PD * 2; cv.height = CH;
+        cx2.fillStyle = 'rgba(7,9,15,0.82)';
+        if (cx2.roundRect) cx2.roundRect(0, 0, cv.width, CH, CH/2);
+        else cx2.rect(0, 0, cv.width, CH);
+        cx2.fill();
+        cx2.fillStyle = node.color || '#e8edf5';
+        cx2.font = 'bold ' + FS + 'px Inter,sans-serif';
+        cx2.textBaseline = 'middle';
+        cx2.fillText(node.name, PD, CH / 2);
+        const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: new THREE.CanvasTexture(cv),
+          depthWrite: false, transparent: true, opacity: 0.9,
+        }));
+        spr.scale.set(cv.width * 0.052, CH * 0.052, 1);
+        spr.position.set(0, -(R + 10), 0);
+        grp.add(spr);
+        return grp;
+      })
+      .nodeThreeObjectExtend(false)
+      .linkColor(l => (l.particle_color || '#334155') + '88')
+      .linkWidth(0.9).linkOpacity(0.28)
+      .linkDirectionalArrowLength(7).linkDirectionalArrowRelPos(0.88)
+      .linkDirectionalArrowColor(l => l.particle_color || '#38bdf8')
+      .linkDirectionalParticles(3)
+      .linkDirectionalParticleSpeed(l => l.particle_speed || 0.004)
+      .linkDirectionalParticleWidth(l => (l.particle_width || 2) * 1.2)
+      .linkDirectionalParticleColor(l => l.particle_color || '#38bdf8')
+      .linkCurvature(0.1)
+      .onNodeHover(node => {
+        document.body.style.cursor = node ? 'pointer' : 'default';
+        if (node) { tip.innerHTML = node.tooltip || '<b>' + node.name + '</b>'; tip.classList.add('show'); }
+        else setTimeout(() => tip.classList.remove('show'), 160);
+      })
+      .onNodeClick(node => {
+        pauseOrbit();
+        G3.cameraPosition(
+          { x: node.x + 65, y: (node.y||0) + 30, z: (node.z||0) + 140 },
+          { x: node.x, y: node.y||0, z: node.z||0 }, 1000
+        );
+      });
+
+    /* lighting */
+    const sc = G3.scene();
+    sc.add(new THREE.AmbientLight(0x1a2040, 2.2));
+    const dl = new THREE.DirectionalLight(0xffffff, 0.5); dl.position.set(1,2,1); sc.add(dl);
+    const pl = new THREE.PointLight(0x38bdf8, 0.8, 1500); pl.position.set(0,400,200); sc.add(pl);
+    const gl = new THREE.PointLight(0xffd700, 0.5, 1000); gl.position.set(300,-100,100); sc.add(gl);
+    const vl = new THREE.PointLight(0xa78bfa, 0.35, 900); vl.position.set(600, 80,-100); sc.add(vl);
+
+    /* orbit */
+    orbitOn = true; scheduleOrbit();
+    gc.addEventListener('mousedown', pauseOrbit);
+    gc.addEventListener('wheel', pauseOrbit, { passive: true });
+  }
+
+  /* ---------- orbit logic ------------------------------------- */
+  let idleTmr;
+  function orbitStep() {
+    if (!orbitOn || !G3) { orbitRAF = null; return; }
+    orbitAngle += 0.0003;          // ~120 s per full revolution
+    G3.cameraPosition({
+      x: 920 * Math.sin(orbitAngle),
+      y: 115 + 38 * Math.sin(orbitAngle * 0.3),
+      z: 920 * Math.cos(orbitAngle),
+    });
+    orbitRAF = requestAnimationFrame(orbitStep);
+  }
+  function scheduleOrbit() { if (!orbitRAF) orbitStep(); }
+  function pauseOrbit() {
+    orbitOn = false;
+    if (orbitRAF) { cancelAnimationFrame(orbitRAF); orbitRAF = null; }
+    clearTimeout(idleTmr);
+    idleTmr = setTimeout(() => { orbitOn = true; scheduleOrbit(); updateOrbitBtn(); }, 7000);
+    updateOrbitBtn();
+  }
+  function updateOrbitBtn() {
+    const b = document.getElementById('orbitBtn');
+    b.textContent = (orbitOn ? '↺ Auto-Orbit: ON' : '⏸ Paused — resuming in 7s');
+    b.classList.toggle('paused', !orbitOn);
+  }
+  document.getElementById('orbitBtn').onclick = () => {
+    orbitOn = !orbitOn;
+    if (orbitOn) scheduleOrbit();
+    else { if (orbitRAF){ cancelAnimationFrame(orbitRAF); orbitRAF = null; } }
+    clearTimeout(idleTmr); updateOrbitBtn();
+  };
+
+  /* ---------- mode toggle ------------------------------------- */
+  function switchMode(m) {
+    if (m === mode) return;
+    mode = m;
+    document.getElementById('btn2d').classList.toggle('on', m === '2d');
+    document.getElementById('btn3d').classList.toggle('on', m === '3d');
+    gc.innerHTML = '';
+    if (m === '2d') init2D(); else init3D();
+  }
+  document.getElementById('btn2d').onclick = () => switchMode('2d');
+  document.getElementById('btn3d').onclick = () => switchMode('3d');
+
+  /* ---------- tooltip follow mouse ---------------------------- */
+  document.addEventListener('mousemove', e => {
+    const tw = tip.offsetWidth;
+    const ox = e.clientX + 18;
+    tip.style.left = (ox + tw > window.innerWidth ? e.clientX - tw - 14 : ox) + 'px';
+    tip.style.top  = (e.clientY - 10) + 'px';
+  });
+
+  /* ---------- resize ------------------------------------------ */
+  window.addEventListener('resize', () => {
+    if (G2) G2.width(gc.clientWidth).height(gc.clientHeight);
+    if (G3) G3.width(gc.clientWidth).height(gc.clientHeight);
+  });
+
+  /* ---------- start ------------------------------------------- */
+  init2D();
+
+})();
+</script>
+</body>
+</html>
